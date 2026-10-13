@@ -64,6 +64,7 @@ function render(){
   $("#chart").innerHTML=h;
 }
 Object.entries(M).forEach(([k,v])=>{const b=el("button","",v.t);b.type="button";b.dataset.v=k;b.onclick=()=>{metric=k;render();};$("#metric").appendChild(b);});
+window.anim={step(d){const ks=Object.keys(M),n=ks.indexOf(metric)+d;if(n<0||n>=ks.length)return false;metric=ks[n];render();return true;}};
 render();
 </script>
 </body>

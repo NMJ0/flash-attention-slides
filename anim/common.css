@@ -52,3 +52,7 @@ button:focus-visible { outline:3px solid var(--title-red); outline-offset:2px; }
 .calc b { color:#F0C674; font-weight:normal; }
 .calc .h { color:#9AA5B0; }
 .tip { font-size:20px; color:var(--gray); margin-top:8px; }
+.grid.cmp { gap:2px; }
+.grid.cmp .cell { min-width:24px; width:24px; height:24px; font-size:0; border-radius:2px; }
+.grid.cmp + .x, .grid.cmp .cl, .grid.cmp .rl { font-size:13px; }
+.grid.cmp .cl { height:18px; }

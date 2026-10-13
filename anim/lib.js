@@ -19,7 +19,7 @@ function matEl(M,o={}){
   const R=M.length,Cn=M[0].length;
   const fig=el("figure","mat"+(o.kind?" k-"+o.kind:""));
   fig.appendChild(el("div","",`<span class="nm">${o.name}</span><span class="shape">[${R} × ${Cn}]</span>`));
-  const g=el("div","grid");
+  const g=el("div","grid"+(o.compact?" cmp":""));
   g.style.gridTemplateColumns=`auto repeat(${Cn}, auto)`;
   let scale=0;for(const r of M)for(const v of r)if(isFinite(v))scale=Math.max(scale,Math.abs(v));
   if(o.prob)scale=1;if(!scale)scale=1;
@@ -29,13 +29,14 @@ function matEl(M,o={}){
   M.forEach((row,i)=>{
     g.appendChild(el("div","rl",esc(rl[i])));
     row.forEach((v,j)=>{
-      const c=el("div","cell",fmt(v));c.dataset.r=i;c.dataset.c=j;
+      const c=el("div","cell",o.compact?"":fmt(v));c.dataset.r=i;c.dataset.c=j;
+      if(o.compact)c.title=fmt(v);
       if(v===-Infinity)c.classList.add("inf");
       else{
         const a=Math.min(1,Math.abs(v)/scale),pct=Math.round(a*(o.prob?85:75));
         const col=o.prob?"var(--kc)":(v>=0?"var(--pos)":"var(--neg)");
         c.style.background=`color-mix(in srgb, ${col} ${pct}%, var(--cell))`;
-        if(pct>52)c.classList.add("strong");
+        if(pct>52&&!o.compact)c.classList.add("strong");
       }
       if(o.cellClass){const x=o.cellClass(i,j);if(x)c.className+=" "+x;}
       if(o.active){c.classList.add("act");c.tabIndex=0;}
@@ -52,18 +53,22 @@ function bindActive(fig,fn){
   fig.addEventListener("mouseover",h);fig.addEventListener("focusin",h);fig.addEventListener("click",h);
 }
 
-/* Key forwarding: arrow keys, space and page keys move the deck even when
-   the iframe has focus. Falls back to postMessage when the parent is
-   cross-origin (e.g. opened from file://). */
+/* Stepping with the keyboard. Each page sets window.anim = {step(dir)},
+   returning true when it moved and false at either end. Inside the deck, the
+   arrow keys go to the deck's deckGo(), which steps the animation first and
+   changes slide only when the animation is at its first or last step.
+   Opened on its own, the arrow keys step the animation directly. */
 (function(){
-  if(window.parent===window)return;
-  const map={ArrowRight:"right",ArrowLeft:"left",ArrowDown:"down",ArrowUp:"up",PageDown:"next",PageUp:"prev"," ":"next"};
+  const map={ArrowRight:1,ArrowDown:1,PageDown:1," ":1,ArrowLeft:-1,ArrowUp:-1,PageUp:-1};
   window.addEventListener("keydown",e=>{
-    const m=map[e.key];if(!m)return;
+    const d=map[e.key];if(!d)return;
     if(e.key===" "&&e.target.tagName==="BUTTON")return;
     e.preventDefault();
-    try{window.parent.Reveal[m]();}
-    catch(_){window.parent.postMessage(JSON.stringify({method:m,args:[]}),"*");}
+    if(window.parent!==window){
+      try{window.parent.deckGo(d);return;}
+      catch(_){window.parent.postMessage(JSON.stringify({method:d>0?"next":"prev",args:[]}),"*");return;}
+    }
+    if(window.anim)window.anim.step(d);
   });
 })();
 

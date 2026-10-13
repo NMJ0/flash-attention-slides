@@ -98,6 +98,7 @@ function render(){
 }
 $("#next").onclick=()=>{if(step<=NB){step++;render();}};
 $("#reset").onclick=()=>{step=0;render();};
+window.anim={step(d){const n=step+d;if(n<0||n>NB+1)return false;step=n;render();return true;}};
 render();
 autoStep($("#next"));
 </script>

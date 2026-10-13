@@ -131,6 +131,7 @@ function render(){
 }
 $("#step").onclick=()=>{if(step<events.length){step++;render();}};
 $("#reset").onclick=()=>{step=0;if(timer){clearInterval(timer);timer=null;}render();};
+window.anim={step(d){const n=step+d;if(n<0||n>events.length)return false;if(timer){clearInterval(timer);timer=null;}step=n;render();return true;}};
 $("#play").onclick=()=>{if(timer){clearInterval(timer);timer=null;}else{if(step>=events.length)step=0;timer=setInterval(()=>{step++;render();},900);}render();};
 $("#cseg").onclick=e=>{const b=e.target.closest("button");if(!b)return;causal=b.dataset.v==="1";build();step=0;render();};
 build();render();

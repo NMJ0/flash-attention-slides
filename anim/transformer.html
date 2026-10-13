@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The transformer, one step at a time</title>
+<link rel="stylesheet" href="common.css">
+<style>
+:root { --w:#6B4FA0; --x:#1F4E79; --eqdull:#C9CDD2; }
+body { padding:18px 36px; }
+.k-w { --kc:var(--w); } .k-m { --kc:var(--mask); } .k-xx { --kc:var(--x); }
+
+/* the small overall pipeline */
+.flow { display:flex; flex-wrap:wrap; gap:4px 2px; align-items:stretch; margin-bottom:10px; }
+.flow .c { display:flex; flex-direction:column; padding:1px 6px 2px; line-height:1.25; border-radius:5px; border:1px solid var(--dim);
+           border-top:3px solid var(--kc, var(--x)); background:#F6F8FA; opacity:.3; transition:all .25s; }
+.flow .c b { font-size:13px; white-space:nowrap; }
+.flow .c span { font-family:Monaco,"Courier New",monospace; font-size:11px; color:var(--gray); white-space:nowrap; }
+.flow .c.loop { border-style:dashed; border-top-style:dashed; }
+.flow .c.on { opacity:1; background:#fff; box-shadow:0 0 0 3px var(--title-red); }
+.flow .a { align-self:center; color:var(--gray); font-size:11px; opacity:.4; }
+
+.head { display:flex; align-items:baseline; gap:16px; }
+.head .n { font-family:Monaco,"Courier New",monospace; font-size:20px; color:#fff; background:var(--title-red); border-radius:4px; padding:1px 9px; }
+.head h3 { margin:0; font-size:28px; font-weight:normal; color:var(--title-red); }
+.head .sp { flex:1; }
+.head button { font-size:18px; padding:4px 12px; }
+.cap { font-size:22px; line-height:1.4; margin:6px 0 12px; min-height:62px; }
+
+.main { display:grid; grid-template-columns:minmax(0,1fr) 410px; gap:24px; align-items:start; }
+#view .row { gap:16px; margin-bottom:10px; }
+#view .cell { min-width:52px; height:35px; font-size:15px; }
+#view .stack { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+#view .stack .op { margin-left:200px; line-height:1; }
+#view.sm .cell { height:28px; }
+#view.sm .row { margin-bottom:4px; }
+#view .grid.cmp .cell { min-width:24px; width:24px; height:24px; }
+#view.xs .grid.cmp .cell { min-width:21px; width:21px; height:21px; }
+#view.xs .grid.cmp .cl { font-size:11px; }
+#view .op { font-size:30px; }
+#view .opw { font-size:20px; color:var(--gray); }
+.calc { font-size:18px; margin-top:10px; min-height:96px; padding:10px 16px; }
+.toks { display:flex; gap:8px; align-items:center; font-size:19px; color:var(--gray); margin-bottom:8px; flex-wrap:wrap; }
+.toks .t { border:1px solid var(--dim); border-radius:4px; padding:2px 10px; color:var(--black); font-family:Monaco,"Courier New",monospace; font-size:17px; }
+.toks .t i { font-style:normal; color:var(--gray); font-size:14px; margin-left:6px; }
+.toks .t.new { border-color:var(--v); outline:2px solid var(--v); }
+.cell.newrow { outline:3px solid var(--black); outline-offset:-2px; }
+
+/* right column */
+.side h4 { margin:0 0 4px; font-size:16px; font-weight:normal; color:var(--gray); }
+.eqbox { border:1px solid var(--dim); border-radius:8px; padding:6px 12px; margin-bottom:8px; }
+.eq { font-family:"Cambria Math","Latin Modern Math","Times New Roman",serif; font-size:20px; line-height:1.4; white-space:nowrap; color:var(--eqdull); }
+.eq.big { font-size:23px; margin:2px 0; }
+.eq.small { font-size:17px; }
+.eq span[data-k] { color:var(--eqdull); border-radius:3px; }
+.eq span.done { color:var(--black); }
+.eq span.cur { color:var(--title-red); background:#FBEFEF; }
+.frac { display:inline-flex; flex-direction:column; align-items:center; vertical-align:middle; font-size:.85em; line-height:1.15; margin:0 2px; }
+.frac > span:first-child { border-bottom:2px solid currentColor; padding:0 3px; }
+.shapes { border-left:4px solid var(--title-red); padding:2px 0 2px 12px; font-size:16px; }
+.shapes .lab { color:var(--gray); font-size:14px; margin-top:4px; }
+.shapes .lab:first-child { margin-top:0; }
+.shapes .m { font-family:Monaco,"Courier New",monospace; font-size:14.5px; line-height:1.4; }
+.shapes .note { font-size:14.5px; color:var(--gray); margin-top:4px; line-height:1.3; }
+.bars { display:grid; width:max-content; grid-template-columns:auto 520px auto; gap:5px 12px; align-items:center; font-size:19px; margin-top:6px; }
+.bars .lb { font-family:Monaco,"Courier New",monospace; text-align:right; }
+.bars .tr { height:22px; background:var(--cell); border-radius:3px; overflow:hidden; }
+.bars .fl { height:100%; background:var(--x); }
+.bars .top { color:var(--title-red); }
+.bars .top + .tr .fl { background:var(--title-red); }
+</style>
+</head>
+<body>
+<nav class="flow" id="flow" aria-label="The whole forward pass"></nav>
+<div class="head">
+  <span class="n" id="num"></span><h3 id="title"></h3><span class="sp"></span>
+  <button id="prev" type="button">◀</button><button id="next" type="button">▶</button>
+</div>
+<p class="cap" id="cap"></p>
+<div class="main">
+  <div><div id="view"></div><div class="calc" id="calc"></div></div>
+  <div class="side">
+    <h4>Where we are in the block</h4>
+    <div class="eqbox">
+      <div class="eq"><span data-k="xl">X</span> = <span data-k="emb">E[ids]</span> <span data-k="pe">+ PE</span></div>
+      <div class="eq"><span data-k="r1">R<sub>1</sub> = X +</span> <span data-k="att">Attn(</span><span data-k="ln1">LN<sub>1</sub>(X)</span><span data-k="att">)</span><span data-k="wo">·W<sub>o</sub></span></div>
+      <div class="eq"><span data-k="out">out = R<sub>1</sub> +</span> <span data-k="ffn">FFN(</span><span data-k="ln2">LN<sub>2</sub>(R<sub>1</sub>)</span><span data-k="ffn">)</span></div>
+      <div class="eq small"><span data-k="ffn">FFN(x) =</span> <span data-k="gelu">GELU(</span><span data-k="w1">x·W<sub>1</sub></span><span data-k="gelu">)</span><span data-k="w2">·W<sub>2</sub></span></div>
+      <div class="eq"><span data-k="pr">p = softmax(</span><span data-k="lg">LN(out)·E<sup>⊤</sup></span><span data-k="pr">)</span>  <span data-k="kv">→ append, repeat</span></div>
+    </div>
+    <h4>Inside Attn, for each head h</h4>
+    <div class="eqbox">
+      <div class="eq small"><span data-k="q">Q = X̂W<sub>q</sub></span>   <span data-k="k">K = X̂W<sub>k</sub></span>   <span data-k="v">V = X̂W<sub>v</sub></span>   <span data-k="hd">→ h heads</span></div>
+      <div class="eq big"><span data-k="pv">O<sub>h</sub> =</span> <span data-k="sm">softmax(</span><span class="frac"><span data-k="s">Q<sub>h</sub>K<sub>h</sub><sup>⊤</sup></span><span data-k="s">√d<sub>k</sub></span></span> <span data-k="mask">+ mask</span><span data-k="sm">)</span> <span data-k="pv">V<sub>h</sub></span></div>
+      <div class="eq small"><span data-k="mg">O = [ O<sub>1</sub> ‖ … ‖ O<sub>h</sub> ]</span></div>
+    </div>
+    <h4>Shapes of this operation</h4>
+    <div class="shapes" id="shapes"></div>
+  </div>
+</div>
+<script src="lib.js"></script>
+<script>
+/* ---------------- the toy model: same seed and weights as the walkthrough page ---------------- */
+const randn=makeRandn(42);
+const randM=(r,c,s)=>Array.from({length:r},()=>Array.from({length:c},()=>randn()*s));
+const add=(A,B)=>A.map((r,i)=>r.map((v,j)=>v+B[i][j]));
+const colsOf=(A,s,w)=>A.map(r=>r.slice(s,s+w));
+const hcat=Ms=>Ms[0].map((_,i)=>Ms.flatMap(M=>M[i]));
+function rowStats(r){const m=r.reduce((a,b)=>a+b,0)/r.length;const v=r.reduce((a,b)=>a+(b-m)**2,0)/r.length;return{m,v,sd:Math.sqrt(v+1e-5)};}
+const layerNorm=X=>X.map(r=>{const s=rowStats(r);return r.map(x=>(x-s.m)/s.sd);});
+const gelu=x=>0.5*x*(1+Math.tanh(Math.sqrt(2/Math.PI)*(x+0.044715*x**3)));
+function posEnc(n,d){return Array.from({length:n},(_,p)=>Array.from({length:d},(_,i)=>{const k=Math.floor(i/2);const a=p/Math.pow(10000,2*k/d);return i%2===0?Math.sin(a):Math.cos(a);}));}
+const argmax=a=>a.reduce((bi,v,i)=>v>a[bi]?i:bi,0);
+const C={V:10,d:8,h:2,dk:4,dff:16};
+const VOCAB=["<bos>","the","cat","sat","on","a","mat","dog","ran","."];
+const PROMPT=[1,2,3,4];
+const E=randM(10,8,0.9);
+const W={Wq:randM(8,8,0.62),Wk:randM(8,8,0.62),Wv:randM(8,8,0.45),Wo:randM(8,8,0.4),W1:randM(8,16,0.45),W2:randM(16,8,0.32)};
+function run(ids){
+  const Emb=ids.map(i=>E[i]),PE=posEnc(ids.length,8),X=add(Emb,PE),L1=layerNorm(X);
+  const Q=matmul(L1,W.Wq),K=matmul(L1,W.Wk),V=matmul(L1,W.Wv),heads=[];
+  for(let h=0;h<2;h++){const Qh=colsOf(Q,h*4,4),Kh=colsOf(K,h*4,4),Vh=colsOf(V,h*4,4);
+    const S=mapM(matmul(Qh,T(Kh)),v=>v/2),Sm=mapM(S,(v,i,j)=>j>i?-Infinity:v),P=Sm.map(softmaxRow),O=matmul(P,Vh);
+    heads.push({Qh,Kh,Vh,S,Sm,P,O});}
+  const Cc=hcat(heads.map(o=>o.O)),A=matmul(Cc,W.Wo),R1=add(X,A),L2=layerNorm(R1);
+  const Hm=matmul(L2,W.W1),G=mapM(Hm,gelu),F=matmul(G,W.W2),R2=add(R1,F),Lf=layerNorm(R2),ET=T(E);
+  const logits=matmul(Lf,ET),probs=logits.map(softmaxRow);
+  return {Emb,PE,X,L1,Q,K,V,heads,Cc,A,R1,L2,Hm,G,F,R2,Lf,ET,logits,probs};
+}
+const M=run(PROMPT),hd=M.heads[0];
+const NEXT=argmax(M.probs[3]);
+const M5=run([...PROMPT,NEXT]),hd5=M5.heads[0];
+const TOK=PROMPT.map(i=>VOCAB[i]);
+const D8=[0,1,2,3,4,5,6,7],DK=["d0","d1","d2","d3"],DF=[...Array(16).keys()];
+
+/* ---------------- views ---------------- */
+const view=$("#view"),calc=$("#calc");
+const op=t=>el("span","op",t),opw=t=>el("span","opw",t);
+function mm(A,B,Cm,oa,ob,oc,post,start){
+  const row=el("div","row");
+  const fa=matEl(A,oa),fb=matEl(B,ob),fc=matEl(Cm,{...oc,active:true});
+  row.append(fa,op("×"),fb,op("="),fc);view.appendChild(row);
+  const raw=matmul(A,B),rl=oa.rl||A.map((_,i)=>i),cl=ob.cl||B[0].map((_,j)=>j);
+  const show=(i,j)=>{
+    clearHL(row);
+    cellsOf(fa).forEach(c=>{if(+c.dataset.r===i)c.classList.add("hl");});
+    cellsOf(fb).forEach(c=>{if(+c.dataset.c===j)c.classList.add("hl");});
+    cellsOf(fc).forEach(c=>{if(+c.dataset.r===i&&+c.dataset.c===j)c.classList.add("sel");});
+    const K=A[0].length,terms=A[i].map((a,k)=>`${fmt(a)}×${fmt(B[k][j])}`);
+    const shown=K>8?terms.slice(0,4).join(" + ")+` + … (${K} terms)`:terms.join(" + ");
+    let s=`<b>${oc.name}[${esc(rl[i])}, ${esc(oc.cname?oc.cname(j):cl[j])}]</b> = row ${i} of ${oa.name} · column ${j} of ${ob.name}<br>= ${shown}<br>= <b>${fmt(raw[i][j])}</b>`;
+    if(post)s+=` ${post} = <b>${fmt(Cm[i][j])}</b>`;
+    s+=`<br><span class="h">${K} multiply-adds per cell × ${Cm.length*Cm[0].length} cells = ${K*Cm.length*Cm[0].length} for the whole matrix</span>`;
+    calc.innerHTML=s;
+  };
+  bindActive(fc,show);show(...(start||[0,0]));
+}
+function ew(parts,res,explain,opts={}){
+  const row=el("div","row"),figs=parts.map(p=>matEl(p.M,p.o));
+  if(figs.length===2){const st=el("div","stack");st.append(figs[0],op(parts[0].op||"+"),figs[1]);row.append(st,op("="));}
+  else figs.forEach((f,k)=>{row.appendChild(f);row.appendChild(k<parts.length-1?op(parts[k].op||"+"):opw(opts.eq||"="));});
+  const fr=matEl(res.M,{...res.o,active:true});row.appendChild(fr);view.appendChild(row);
+  const show=(i,j)=>{
+    clearHL(row);
+    figs.forEach(f=>cellsOf(f).forEach(c=>{const r=+c.dataset.r,cc=+c.dataset.c;if(opts.rowwise?r===i:(r===i&&cc===j))c.classList.add("hl");}));
+    cellsOf(fr).forEach(c=>{if(+c.dataset.r===i&&+c.dataset.c===j)c.classList.add("sel");});
+    calc.innerHTML=explain(i,j);
+  };
+  bindActive(fr,show);show(...(opts.start||[0,0]));
+}
+const toks=(extra)=>el("div","toks",`tokens: ${TOK.map((t,i)=>`<span class="t">${t}<i>id ${PROMPT[i]}</i></span>`).join("")}${extra||""}`);
+function lnExplain(Xin,Yout,name,inName){return(i,j)=>{const s=rowStats(Xin[i]);
+  return `row "${TOK[i]}":  μ = mean of ${inName}[${TOK[i]}, :] = <b>${fmt(s.m)}</b>   σ² = <b>${fmt(s.v,3)}</b><br><b>${name}[${TOK[i]}, ${j}]</b> = (${fmt(Xin[i][j])} − ${fmt(s.m)}) / √(${fmt(s.v,3)} + 10⁻⁵) = <b>${fmt(Yout[i][j])}</b><br><span class="h">γ = 1, β = 0 here (their initial values)</span>`;};}
+const qkvCap={q:"<b>Query</b>: what this token is looking for in other tokens.",k:"<b>Key</b>: what this token offers; queries are matched against keys.",v:"<b>Value</b>: the content this token hands over to whoever attends to it."};
+const sh=(toy,gpt,note)=>({toy,gpt,note});
+
+/* ---------------- the steps ---------------- */
+const STEPS=[
+ {chips:[0,1],k:["emb"],t:"Tokens → rows of the embedding table",
+  cap:"The tokenizer turns text into integer ids from a fixed vocabulary of V entries. The <b>embedding table E [V × d]</b> is a learned matrix with one row per vocabulary entry: embedding a token just fetches its row. This is a gather (an indexed memory read), not a matrix multiply.",
+  sh:sh("E [10 × 8],  ids [4]<br>→ E[ids] [4 × 8]","wte [50,257 × 768],  ids [1,024]<br>→ E[ids] [1,024 × 768]","The GPT-2 table is 154 MB in FP32, but each pass reads only n rows of it."),
+  draw(){
+    view.appendChild(toks());
+    const row=el("div","row");
+    const fe=matEl(E,{name:"E",kind:"w",rl:VOCAB.map((w,i)=>i+" "+w),cl:D8,compact:true,cellClass:i=>PROMPT.includes(i)?"":"dim"});
+    const fr=matEl(M.Emb,{name:"E[ids]",kind:"xx",rl:TOK,cl:D8,active:true});
+    row.append(fe,opw("gather rows<br>1, 2, 3, 4 →"),fr);view.appendChild(row);
+    const show=(i,j)=>{clearHL(row);
+      cellsOf(fe).forEach(c=>{if(+c.dataset.r===PROMPT[i])c.classList.add("hl");});
+      cellsOf(fr).forEach(c=>{if(+c.dataset.r===i&&+c.dataset.c===j)c.classList.add("sel");});
+      calc.innerHTML=`<b>E[ids][${TOK[i]}, ${j}]</b> = E[${PROMPT[i]}, ${j}] = <b>${fmt(E[PROMPT[i]][j])}</b><br><span class="h">"${TOK[i]}" has id ${PROMPT[i]}, so its vector is row ${PROMPT[i]} of E. Zero arithmetic.</span>`;};
+    bindActive(fr,show);show(0,0);}},
+ {chips:[2],k:["pe","xl"],t:"Add the position of each token",
+  cap:"Attention has no sense of order: shuffle the rows of X and the outputs shuffle the same way. So each position gets its own vector, added to the token's row. The original transformer uses fixed sine and cosine waves (as here); GPT-2 learns a table of position vectors instead.",
+  sh:sh("E[ids] [4 × 8] + PE [4 × 8]<br>→ X [4 × 8]","E[ids] [1,024 × 768] + wpe [1,024 × 768]<br>→ X [1,024 × 768]","GPT-2's wpe is learned, one row per position up to its 1,024-token context."),
+  draw(){ew([{M:M.Emb,o:{name:"E[ids]",kind:"xx",rl:TOK,cl:D8}},{M:M.PE,o:{name:"PE",kind:"xx",rl:["pos 0","pos 1","pos 2","pos 3"],cl:D8}}],{M:M.X,o:{name:"X",kind:"xx",rl:TOK,cl:D8}},
+    (i,j)=>{const k=Math.floor(j/2),fn=j%2?"cos":"sin";return `<b>X[${TOK[i]}, ${j}]</b> = E[ids][${TOK[i]}, ${j}] + PE[${i}, ${j}] = ${fmt(M.Emb[i][j])} + ${fmt(M.PE[i][j])} = <b>${fmt(M.X[i][j])}</b><br>PE[${i}, ${j}] = ${fn}(${i} / 10000<sup>${2*k}/8</sup>)<br><span class="h">even columns use sin, odd columns cos; lower columns change fastest with position</span>`;});}},
+ {chips:[3],k:["ln1"],t:"LayerNorm",
+  cap:"Each token's row is normalised on its own to mean 0 and variance 1 across its d features, then scaled by γ and shifted by β (both learned vectors of length d). Two reductions per row (mean, variance), then one elementwise pass. GPT-2 does this <b>before</b> each sub-layer (pre-LN).",
+  sh:sh("X [4 × 8] → X̂ [4 × 8]<br>one mean, one variance per row of 8","X [1,024 × 768] → X̂ [1,024 × 768]<br>γ, β [768]","Llama replaces this with RMSNorm: no mean subtraction, no β."),
+  draw(){ew([{M:M.X,o:{name:"X",kind:"xx",rl:TOK,cl:D8}}],{M:M.L1,o:{name:"X̂",kind:"xx",rl:TOK,cl:D8}},lnExplain(M.X,M.L1,"X̂","X"),{eq:"→ LayerNorm →",rowwise:true});}},
+ ...["q","k","v"].map(n=>({chips:[4],k:[n,"att"],t:`${({q:"Query",k:"Key",v:"Value"})[n]} projection: ${n.toUpperCase()} = X̂·W${n}`,
+  cap:qkvCap[n]+" Each token's normalised row is multiplied by a learned weight matrix: an ordinary GEMM. Each output row depends only on the same input row, so no token has looked at any other token yet.",
+  sh:sh(`X̂ [4 × 8] · W<sub>${n}</sub> [8 × 8]<br>→ ${n.toUpperCase()} [4 × 8]`,`X̂ [1,024 × 768] · W<sub>${n}</sub> [768 × 768]<br>→ ${n.toUpperCase()} [1,024 × 768]  (1.2 GFLOP)`,"GPT-2 stores W<sub>q</sub>, W<sub>k</sub>, W<sub>v</sub> side by side as one [768 × 2,304] matrix and runs a single GEMM."),
+  draw(){mm(M.L1,W["W"+n],M[n.toUpperCase()],{name:"X̂",kind:"xx",rl:TOK,cl:D8,compact:true},{name:"W"+n,kind:"w",rl:D8,cl:D8,compact:true},{name:n.toUpperCase(),kind:n,rl:TOK,cl:D8},null,[1,2]);}})),
+ {chips:[5],k:["hd","att"],t:"Split into heads",
+  cap:"Instead of one attention over all d columns, the model runs <b>h independent heads</b>, each on its own d<sub>k</sub> = d / h columns. Here h = 2: columns 0–3 belong to head 1, 4–7 to head 2. Different heads learn different relations. This is only a reshape: no arithmetic. From here on, head 1 is shown.",
+  sh:sh("Q, K, V [4 × 8] → 2 heads × [4 × 4]","Q, K, V [1,024 × 768]<br>→ 12 heads × [1,024 × 64]","Llama-3-8B: 32 heads of 128 for Q, but only 8 for K and V (grouped-query attention)."),
+  draw(){view.classList.add("sm");
+    [["Q","q",M.Q,hd.Qh],["K","k",M.K,hd.Kh],["V","v",M.V,hd.Vh]].forEach(([n,k,Full,Hm])=>{const r=el("div","row");
+      r.append(matEl(Full,{name:n,kind:k,rl:TOK,cl:D8,compact:true,cellClass:(i,j)=>j<4?"":"dim"}),opw("columns 0–3 →"),matEl(Hm,{name:n+"₁",kind:k,rl:TOK,cl:DK}));view.appendChild(r);});
+    calc.style.display="none";}},
+ {chips:[6],k:["s","att"],t:"Attention scores: S = Q₁K₁ᵀ / √dₖ",
+  cap:"This is where tokens finally meet. Entry (i, j) is the dot product of token i's query with token j's key: how relevant token j is to token i. Dividing by √d<sub>k</sub> keeps the variance near 1, so softmax does not saturate. This is the only matrix in the model whose size grows as <b>n²</b>.",
+  sh:sh("Q₁ [4 × 4] · K₁ᵀ [4 × 4] → S [4 × 4]<br>per head, × 2 heads","12 × ( [1,024 × 64] · [64 × 1,024] )<br>→ S [12 × 1,024 × 1,024]","12.6 million scores per layer: 25 MB in FP16, more than all of Q, K and V together (4.7 MB)."),
+  draw(){mm(hd.Qh,T(hd.Kh),hd.S,{name:"Q₁",kind:"q",rl:TOK,cl:DK},{name:"K₁ᵀ",kind:"k",rl:DK,cl:TOK},{name:"S",kind:"xx",rl:TOK,cl:TOK},"÷ √4",[3,1]);}},
+ {chips:[7],k:["mask","att"],t:"Causal mask",
+  cap:"A decoder predicts the next token, so token i must not see the tokens after it, or training would be trivial. The causal mask sets every score above the diagonal to −∞, which softmax turns into exactly 0. It costs nothing: a comparison of row and column indices. (An encoder such as BERT has no causal mask.)",
+  sh:sh("S [4 × 4] → S′ [4 × 4]","S [12 × 1,024 × 1,024] → S′, same shape","Half of every score matrix is masked: work that a good kernel can skip."),
+  draw(){ew([{M:hd.S,o:{name:"S",kind:"xx",rl:TOK,cl:TOK}}],{M:hd.Sm,o:{name:"S′",kind:"m",rl:TOK,cl:TOK}},
+    (i,j)=>j>i?`<b>S′[${TOK[i]}, ${TOK[j]}]</b> = −∞<br><span class="h">"${TOK[j]}" (position ${j}) comes after "${TOK[i]}" (position ${i}), so it is hidden</span>`:`<b>S′[${TOK[i]}, ${TOK[j]}]</b> = S[${TOK[i]}, ${TOK[j]}] = <b>${fmt(hd.Sm[i][j])}</b><br><span class="h">position ${j} ≤ ${i}: visible</span>`,{eq:"→ mask →",start:[1,2]});}},
+ {chips:[8],k:["sm","att"],t:"Softmax, row by row",
+  cap:"Each row becomes a probability distribution: subtract the row's maximum (it cancels out, but prevents overflow), exponentiate, divide by the row's sum. Row i of P says how token i divides its attention. Note that no entry is final until the <b>whole row</b> has been seen: max and sum are reductions over the row.",
+  sh:sh("row-wise over S′ [4 × 4] → P [4 × 4]","row-wise over [12 × 1,024 × 1,024]<br>→ P, same shape","Per layer: 12.6 M exponentials, 12,288 row maxima, 12,288 row sums."),
+  draw(){ew([{M:hd.Sm,o:{name:"S′",kind:"xx",rl:TOK,cl:TOK}}],{M:hd.P,o:{name:"P",kind:"p",prob:true,rl:TOK,cl:TOK}},(i,j)=>{
+    const r=hd.Sm[i],m=Math.max(...r),ex=r.map(x=>x===-Infinity?0:Math.exp(x-m)),s=ex.reduce((a,b)=>a+b,0);
+    return `row "${TOK[i]}":  max = <b>${fmt(m)}</b>   e<sup>S′ − max</sup> = [${ex.map(x=>fmt(x)).join(", ")}]   sum = <b>${fmt(s,3)}</b><br><b>P[${TOK[i]}, ${TOK[j]}]</b> = ${fmt(ex[j])} / ${fmt(s,3)} = <b>${fmt(hd.P[i][j],3)}</b><br><span class="h">three passes over the row: max, sum of exponentials, divide</span>`;},{eq:"→ softmax →",rowwise:true,start:[3,1]});}},
+ {chips:[9],k:["pv","att"],t:"Weighted sum of values: O₁ = P·V₁",
+  cap:"Output row i is a weighted average of the value vectors, weighted by row i of P. This is the moment information moves from one token's position to another's. Scores, mask, softmax and this multiply are the only place in the whole transformer where tokens interact.",
+  sh:sh("P [4 × 4] · V₁ [4 × 4] → O₁ [4 × 4]<br>per head","12 × ( [1,024 × 1,024] · [1,024 × 64] )<br>→ [12 × 1,024 × 64]",""),
+  draw(){mm(hd.P,hd.Vh,hd.O,{name:"P",kind:"p",prob:true,rl:TOK,cl:TOK},{name:"V₁",kind:"v",rl:TOK,cl:DK},{name:"O₁",kind:"xx",rl:TOK,cl:DK},null,[3,0]);}},
+ {chips:[10],k:["mg"],t:"Merge the heads",
+  cap:"Concatenate the head outputs side by side to get back one row of d numbers per token. Like the split, this is only layout.",
+  sh:sh("2 × O<sub>h</sub> [4 × 4] → O [4 × 8]","12 × [1,024 × 64] → O [1,024 × 768]",""),
+  draw(){const r=el("div","row");r.append(matEl(M.heads[0].O,{name:"O₁",kind:"xx",rl:TOK,cl:DK}),op("‖"),matEl(M.heads[1].O,{name:"O₂",kind:"xx",rl:TOK,cl:DK}),op("→"),
+    matEl(M.Cc,{name:"O",kind:"xx",rl:TOK,cl:D8,cellClass:(i,j)=>j<4?"":"" }));view.appendChild(r);
+    calc.innerHTML=`O[:, 0–3] = O₁ (head 1)     O[:, 4–7] = O₂ (head 2)<br><span class="h">Each head ran the same five steps on its own slice of columns.</span>`;}},
+ {chips:[10],k:["wo"],t:"Output projection: Att = O·Wₒ",
+  cap:"One more learned matrix mixes the information coming from the different heads.",
+  sh:sh("O [4 × 8] · W<sub>o</sub> [8 × 8] → Att [4 × 8]","O [1,024 × 768] · W<sub>o</sub> [768 × 768]<br>→ [1,024 × 768]  (1.2 GFLOP)",""),
+  draw(){mm(M.Cc,W.Wo,M.A,{name:"O",kind:"xx",rl:TOK,cl:D8,compact:true},{name:"Wo",kind:"w",rl:D8,cl:D8,compact:true},{name:"Att",kind:"xx",rl:TOK,cl:D8});}},
+ {chips:[11],k:["r1"],t:"Residual add",
+  cap:"Add the attention output back onto the block's input X (the un-normalised one). The sub-layer only has to learn a <b>correction</b> to its input, which is what makes stacks of dozens of blocks trainable. This running sum is the <b>residual stream</b>: every block reads from it and adds into it.",
+  sh:sh("X [4 × 8] + Att [4 × 8] → R₁ [4 × 8]","[1,024 × 768] + [1,024 × 768]","Elementwise: usually fused into the end of the W<sub>o</sub> GEMM."),
+  draw(){ew([{M:M.X,o:{name:"X",kind:"xx",rl:TOK,cl:D8}},{M:M.A,o:{name:"Att",kind:"xx",rl:TOK,cl:D8}}],{M:M.R1,o:{name:"R₁",kind:"xx",rl:TOK,cl:D8}},
+    (i,j)=>`<b>R₁[${TOK[i]}, ${j}]</b> = X + Att = ${fmt(M.X[i][j])} + ${fmt(M.A[i][j])} = <b>${fmt(M.R1[i][j])}</b>`);}},
+ {chips:[12],k:["ln2"],t:"LayerNorm, before the feed-forward network",
+  cap:"Normalise each row again. Same operation as before, with its own γ and β.",
+  sh:sh("R₁ [4 × 8] → X̂₂ [4 × 8]","[1,024 × 768] → [1,024 × 768]",""),
+  draw(){ew([{M:M.R1,o:{name:"R₁",kind:"xx",rl:TOK,cl:D8}}],{M:M.L2,o:{name:"X̂₂",kind:"xx",rl:TOK,cl:D8}},lnExplain(M.R1,M.L2,"X̂₂","R₁"),{eq:"→ LayerNorm →",rowwise:true});}},
+ {chips:[12],k:["w1","ffn"],t:"Feed-forward, up: H = X̂₂·W₁",
+  cap:"The feed-forward network is a two-layer MLP applied to every row on its own, with the same weights: no token mixing here. First each row is expanded from d to a wider d<sub>ff</sub> (4d in real models, 2d in the toy). The FFN holds about two thirds of a transformer's parameters.",
+  sh:sh("X̂₂ [4 × 8] · W₁ [8 × 16] → H [4 × 16]","[1,024 × 768] · W₁ [768 × 3,072]<br>→ H [1,024 × 3,072]  (4.8 GFLOP)","Llama uses SwiGLU instead: three matrices (gate, up, down) and d<sub>ff</sub> ≈ 3.5d."),
+  draw(){view.classList.add("xs");mm(M.L2,W.W1,M.Hm,{name:"X̂₂",kind:"xx",rl:TOK,cl:D8,compact:true},{name:"W₁",kind:"w",rl:D8,cl:DF,compact:true},{name:"H",kind:"xx",rl:TOK,cl:DF,compact:true},null,[0,5]);}},
+ {chips:[12],k:["gelu","ffn"],t:"GELU",
+  cap:"A smooth nonlinearity, applied elementwise: negative inputs are squashed toward 0, positive inputs pass almost unchanged. Without it, the two FFN layers would collapse into a single matrix.",
+  sh:sh("H [4 × 16] → G [4 × 16], elementwise","[1,024 × 3,072] → [1,024 × 3,072]",""),
+  draw(){ew([{M:M.Hm,o:{name:"H",kind:"xx",rl:TOK,cl:DF,compact:true}}],{M:M.G,o:{name:"G",kind:"xx",rl:TOK,cl:DF,compact:true}},
+    (i,j)=>{const x=M.Hm[i][j];return `<b>G[${TOK[i]}, ${j}]</b> = GELU(${fmt(x)}) = 0.5·${fmt(x)}·(1 + tanh(0.798·(${fmt(x)} + 0.0447·${fmt(x)}³))) = <b>${fmt(M.G[i][j])}</b>`;},{eq:"→ GELU →",start:[0,5]});}},
+ {chips:[12],k:["w2","ffn"],t:"Feed-forward, down: F = G·W₂",
+  cap:"Project each row back from d<sub>ff</sub> to d, so that it can be added to the residual stream.",
+  sh:sh("G [4 × 16] · W₂ [16 × 8] → F [4 × 8]","[1,024 × 3,072] · W₂ [3,072 × 768]<br>→ F [1,024 × 768]  (4.8 GFLOP)",""),
+  draw(){mm(M.G,W.W2,M.F,{name:"G",kind:"xx",rl:TOK,cl:DF,compact:true},{name:"W₂",kind:"w",rl:DF,cl:D8,compact:true},{name:"F",kind:"xx",rl:TOK,cl:D8,compact:true});}},
+ {chips:[13],k:["out"],t:"Residual add: the block's output",
+  cap:"Add the FFN output into the residual stream. The output has exactly the shape of the input, so the next block takes it directly. A model is L copies of this block, each with its own weights: GPT-2 small has 12, Llama-3-8B has 32.",
+  sh:sh("R₁ [4 × 8] + F [4 × 8] → out [4 × 8]<br>1 block","[1,024 × 768] → [1,024 × 768]<br>× 12 blocks","Six weight GEMMs per block (Q, K, V, O, FFN up, FFN down) plus the two attention multiplies."),
+  draw(){ew([{M:M.R1,o:{name:"R₁",kind:"xx",rl:TOK,cl:D8}},{M:M.F,o:{name:"F",kind:"xx",rl:TOK,cl:D8}}],{M:M.R2,o:{name:"out",kind:"xx",rl:TOK,cl:D8}},
+    (i,j)=>`<b>out[${TOK[i]}, ${j}]</b> = R₁ + F = ${fmt(M.R1[i][j])} + ${fmt(M.F[i][j])} = <b>${fmt(M.R2[i][j])}</b><br><span class="h">→ input of the next block</span>`);}},
+ {chips:[14],k:["lg"],t:"Output head: logits = LN(out)·Eᵀ",
+  cap:"After the last block: a final LayerNorm, then a multiply by the <b>unembedding</b> matrix, giving one score (logit) per vocabulary word at every position. GPT-2 and the toy reuse the embedding table, transposed (weight tying). Row i predicts the token that comes <b>after</b> position i.",
+  sh:sh("Z [4 × 8] · Eᵀ [8 × 10] → logits [4 × 10]","[1,024 × 768] · Eᵀ [768 × 50,257]<br>→ [1,024 × 50,257]  (79 GFLOP)","Generating needs only the last row: [1 × 768] · [768 × 50,257]."),
+  draw(){mm(M.Lf,M.ET,M.logits,{name:"Z = LN(out)",kind:"xx",rl:TOK,cl:D8,compact:true},{name:"Eᵀ",kind:"w",rl:D8,cl:VOCAB.map((_,i)=>i),compact:true},{name:"logits",kind:"p",rl:TOK.map(t=>"after "+t),cl:VOCAB.map((_,i)=>i),compact:true,cname:j=>VOCAB[j]},null,[3,NEXT]);}},
+ {chips:[15],k:["pr"],t:"Probabilities for the next token",
+  cap:"Softmax over the last row of logits gives a probability for every word in the vocabulary. Greedy decoding picks the largest. The toy's weights are random, so its choice means nothing, but the procedure is exactly what a trained model does.",
+  sh:sh("logits[3] [1 × 10] → p [10]","logits[1,023] [1 × 50,257] → p [50,257]",""),
+  draw(){const last=M.probs[3],ord=last.map((p,i)=>[p,i]).sort((a,b)=>b[0]-a[0]);
+    view.appendChild(el("div","toks",`p(next token | "${TOK.join(" ")}")`));
+    view.appendChild(el("div","bars",ord.map(([p,i])=>`<div class="lb${i===NEXT?" top":""}">${esc(VOCAB[i])}</div><div class="tr"><div class="fl" style="width:${(p*100).toFixed(1)}%"></div></div><div class="lb${i===NEXT?" top":""}">${(p*100).toFixed(1)}%</div>`).join("")));
+    calc.innerHTML=`p = softmax(logits[“${TOK[3]}”, :])   greedy pick: <b>“${VOCAB[NEXT]}”</b> (${(last[NEXT]*100).toFixed(1)}%)<br><span class="h">Training uses every row at once: each row is scored against the true next token.</span>`;}},
+ {chips:[16],k:["kv"],t:"Generate: append the token, repeat, with a KV cache",
+  cap:"To generate, append the chosen token and run the model again. Because of the causal mask, earlier tokens' K and V never change, so they are kept in a <b>KV cache</b>. The next pass computes q, k and v for the new token only, appends k and v to the cache, and its single query attends over the whole cache.",
+  sh:sh("cache: K₁, V₁ [5 × 4] per head<br>new query: [1 × 4] · K₁ᵀ [4 × 5] → [1 × 5]","cache: 2 × 12 layers × 12 heads × [n × 64]<br>= 38 MB at n = 1,024 (FP16)","Every weight is read again to produce one token, so generating is limited by memory bandwidth."),
+  draw(){view.appendChild(toks(` → <span class="t new">${VOCAB[NEXT]}<i>new</i></span>`));
+    const rl=[...TOK,VOCAB[NEXT]],r=el("div","row");
+    r.append(matEl(hd5.Kh,{name:"K₁ cache",kind:"k",rl,cl:DK,cellClass:i=>i===4?"newrow":""}),matEl(hd5.Vh,{name:"V₁ cache",kind:"v",rl,cl:DK,cellClass:i=>i===4?"newrow":""}));
+    view.appendChild(r);
+    calc.innerHTML=`new token "${VOCAB[NEXT]}" (position 4): x [1 × 8] → q, k, v = x̂·W   <span class="h">[1 × 8]·[8 × 8]: one row of work per weight read</span><br>append k, v → cache [5 × 4] per head (outlined rows)<br>s = q₁·K₁ᵀ [1 × 4]·[4 × 5] → [1 × 5],  softmax,  o = p·V₁ [1 × 5]·[5 × 4] → [1 × 4]`;}}
+];
+
+/* ---------------- overall pipeline (small) ---------------- */
+const FLOW=[["text",'"the cat sat on"',"xx"],["token ids","[4]","xx"],["X","[4 × 8]","xx"],["LayerNorm","[4 × 8]","xx"],["Q, K, V","3 × [4 × 8]","q"],["heads","2 × [4 × 4]","q"],
+  ["scores","2 × [4 × 4]","k"],["mask","2 × [4 × 4]","m"],["softmax P","2 × [4 × 4]","p"],["P · V","2 × [4 × 4]","v"],["merge · Wo","[4 × 8]","w"],["+ residual","[4 × 8]","xx"],
+  ["FFN","[4 × 16] → [4 × 8]","w"],["block out","[4 × 8]","xx"],["logits","[4 × 10]","p"],["p(next)","[10]","p"],["append, repeat","KV cache","v"]];
+$("#flow").innerHTML=FLOW.map(([b,s,k],i)=>`<div class="c k-${k}${i===FLOW.length-1?" loop":""}" data-i="${i}"><b>${b}</b><span>${esc(s)}</span></div>`+(i<FLOW.length-1?`<span class="a">→</span>`:"")).join("");
+
+/* ---------------- stepping ---------------- */
+let cur=0;
+function render(){
+  const st=STEPS[cur];
+  $$("#flow .c").forEach(c=>c.classList.toggle("on",st.chips.includes(+c.dataset.i)));
+  const done=new Set();STEPS.slice(0,cur).forEach(s=>s.k.forEach(k=>done.add(k)));
+  $$(".eq span[data-k]").forEach(s=>{const k=s.dataset.k;s.classList.toggle("cur",st.k.includes(k));s.classList.toggle("done",!st.k.includes(k)&&done.has(k));});
+  $("#num").textContent=`${cur+1} / ${STEPS.length}`;
+  $("#title").textContent=st.t;
+  $("#cap").innerHTML=st.cap;
+  $("#shapes").innerHTML=`<div class="lab">toy model</div><div class="m">${st.sh.toy}</div><div class="lab">GPT-2 small, n = 1,024 tokens</div><div class="m">${st.sh.gpt}</div>${st.sh.note?`<div class="note">${st.sh.note}</div>`:""}`;
+  view.innerHTML="";view.className="";calc.innerHTML="";calc.style.display="";
+  st.draw();
+  $("#prev").disabled=cur===0;$("#next").disabled=cur===STEPS.length-1;
+}
+window.anim={step(d){const n=cur+d;if(n<0||n>=STEPS.length)return false;cur=n;render();return true;}};
+$("#prev").onclick=()=>anim.step(-1);$("#next").onclick=()=>anim.step(1);
+render();
+autoStep($("#next"));
+</script>
+</body>
+</html>
