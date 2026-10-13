@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Measured on the RTX 4090</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.chart { display:grid; grid-template-columns:180px 1fr 190px; gap:4px 18px; align-items:center; margin-top:10px; }
+.nlab { font-family:Monaco,"Courier New",monospace; font-size:22px; text-align:right; grid-row:span 3; align-self:center; }
+.bar { height:27px; display:flex; align-items:center; position:relative; }
+.bar div { height:100%; border-radius:3px; transition:width .35s; }
+.bar .lb { position:absolute; left:8px; font-size:18px; color:#fff; white-space:nowrap; }
+.val { font-family:Monaco,"Courier New",monospace; font-size:20px; white-space:nowrap; }
+.oom { height:100%; width:100%; background:repeating-linear-gradient(135deg, #fff 0 8px, #F2D3D2 8px 16px) !important; border:1px solid var(--mask); }
+.oom + .lb { color:var(--mask) !important; }
+.gap { grid-column:1 / -1; height:6px; }
+.c-e { background:var(--gray); } .c-c { background:var(--v); } .c-f { background:var(--title-red); }
+.legend { display:flex; gap:26px; font-size:21px; color:var(--gray); margin-top:4px; }
+.legend i { width:18px; height:18px; display:inline-block; border-radius:3px; margin-right:8px; vertical-align:-2px; }
+.peak { position:absolute; top:-6px; bottom:-6px; border-left:2px dashed var(--black); }
+</style>
+</head>
+<body>
+<div class="controls">
+  <div class="seg" id="metric"></div>
+  <span class="lab">batch 1, 32 heads, d<sub>k</sub> = 128, FP16, causal · median of 20 runs · RTX 4090, PyTorch 2.12</span>
+</div>
+<p class="caption" id="caption"></p>
+<div class="legend"><span><i class="c-e"></i>explicit, eager (6 kernels)</span><span><i class="c-c"></i>explicit, torch.compile (3 kernels)</span><span><i class="c-f"></i>FlashAttention, SDPA flash backend (1 kernel)</span><span style="margin-left:auto">max |difference| ≤ 4·10⁻³ (FP16 rounding)</span></div>
+<div class="chart" id="chart"></div>
+<script src="lib.js"></script>
+<script>
+/* flash_attention/results_attention.txt in the lecture repo */
+const R={
+  1024:{e:[0.758,136,11.3],c:[0.307,72,28.0],f:[0.107,8,80.3]},
+  2048:{e:[3.072,528,11.2],c:[1.304,272,26.3],f:[0.309,16,111.1]},
+  4096:{e:[12.275,2080,11.2],c:[5.481,1056,25.1],f:[1.049,33,131.1]},
+  8192:{e:[49.020,8256,11.2],c:[21.662,4160,25.4],f:[3.697,65,148.7]},
+  16384:{e:null,c:null,f:[14.695,130,149.6]}};
+const M={
+  time:{t:"Time",i:0,cap:"Forward time. Each row is scaled to its slowest bar. FlashAttention is <b>13× faster than eager and 6× faster than torch.compile</b> at n = 8,192; at 16,384 the other two do not fit in 24 GB.",f:v=>v<1?v.toFixed(3)+" ms":v.toFixed(1)+" ms"},
+  mem:{t:"Extra memory",i:1,cap:"Memory allocated during the call, beyond Q, K, V and the mask. Explicit attention grows as <b>n²</b> (4× per doubling); FlashAttention grows as <b>n</b> (2× per doubling): only O and one log-sum-exp per row.",f:v=>v>=1024?(v/1024).toFixed(1)+" GB":v.toFixed(0)+" MB"},
+  tf:{t:"TFLOP/s",i:2,cap:"Useful attention FLOPs per second (causal: half the n × n scores). The dashed line is the 4090's FP16 tensor-core peak with FP32 accumulate, 165 TFLOP/s. Explicit attention is stuck near 11, waiting on memory; FlashAttention reaches <b>~90% of peak</b>.",f:v=>v.toFixed(1)}
+};
+let metric="time";
+function render(){
+  const m=M[metric];
+  $$("#metric button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===metric));
+  $("#caption").innerHTML=m.cap;
+  let h="";
+  for(const [n,r] of Object.entries(R)){
+    const vals=["e","c","f"].map(k=>r[k]?r[k][m.i]:null);
+    const sc=metric==="tf"?165:Math.max(...vals.filter(v=>v!=null));
+    h+=`<div class="nlab">n = ${(+n).toLocaleString("en-US")}</div>`;
+    ["e","c","f"].forEach((k,idx)=>{
+      const v=vals[idx];
+      const peak=metric==="tf"?`<span class="peak" style="left:100%"></span>`:"";
+      if(v==null)h+=`<div class="bar"><div class="oom"></div><span class="lb">out of memory</span></div><div class="val" style="color:var(--mask)">OOM</div>`;
+      else{const extra=metric==="time"&&k!=="f"?"":metric==="time"&&r.e?`  ${(r.e[0]/v).toFixed(1)}×`:"";
+        h+=`<div class="bar"><div class="c-${k}" style="width:${Math.max(0.4,v/sc*100)}%"></div>${peak}</div><div class="val">${m.f(v)}<span style="color:var(--title-red)">${extra}</span></div>`;}
+    });
+    h+=`<div class="gap"></div>`;
+  }
+  $("#chart").innerHTML=h;
+}
+Object.entries(M).forEach(([k,v])=>{const b=el("button","",v.t);b.type="button";b.dataset.v=k;b.onclick=()=>{metric=k;render();};$("#metric").appendChild(b);});
+render();
+</script>
+</body>
+</html>

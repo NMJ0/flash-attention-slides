@@ -1,0 +1,58 @@
+/* Deck theme: plain white, dark-red titles, content anchored to the top. */
+:root { --title-red:#8B1514; --black:#000; --gray:#4D4F53; --dim:#D9D9D9;
+        --q:#2F6DB5; --k:#2E7D5B; --v:#C46A12; }
+
+.reveal { font-family: Arial, Helvetica, sans-serif; color: var(--black); }
+.reveal .slides section { text-align:left; padding:37px 82px 20px;
+    box-sizing:border-box; top:0 !important; height:100%; }
+.reveal h1, .reveal h2, .reveal h3 { color: var(--title-red); font-weight: normal;
+    text-transform: none; font-family: Arial, Helvetica, sans-serif; letter-spacing:0; }
+.reveal h2, .reveal h3 { font-size:1.35em; margin:0 0 .5em; }
+.reveal p  { font-size:.7em !important; line-height:1.55; margin:0 0 .15em; }
+.reveal li { font-size:.7em; line-height:1.55; margin-bottom:.15em; }
+.reveal li li { font-size:.9em; }
+.reveal ul { list-style-type:"• "; padding-left:1em; margin:0; display:block; }
+.reveal ul ul { margin:.1em 0 .2em; list-style-type:"– "; }
+.reveal code { font-family:Monaco,"Courier New",monospace; background:none; font-size:1em; }
+.reveal strong, .reveal b { font-weight:bold; }
+
+/* title slide */
+.reveal .title-slide { padding-top:200px !important; }
+.reveal .title-slide .main-title,
+.reveal .title-slide .lecture-title { color:var(--title-red); font-weight:bold; font-size:1.05em; margin:0 0 .3em; }
+.reveal .title-slide .lecture-title { font-size:1.6em; margin-bottom:1em; }
+.reveal .title-slide .info { color:var(--gray); font-size:.6em !important; margin:0; }
+
+/* outline slide, repeated between sections */
+.reveal .outline-slide .outline-items { list-style:none; padding-left:0; margin-top:.6em; }
+.reveal .outline-slide .outline-items li { font-size:.95em; margin-bottom:.55em; }
+.reveal .outline-slide .outline-items li.dim { color:var(--dim); }
+
+/* slides that embed an anim/ page */
+.reveal .slides section.demo-slide { overflow:hidden; padding:37px 42px 0 !important; }
+.reveal .demo-slide h2 { padding-left:40px; }
+.iframe-wrap { position:relative; width:1116px; height:610px; overflow:hidden auto; }
+.reveal .demo-slide iframe { border:none; position:absolute; width:1600px; height:1100px;
+    top:0; left:50%; transform:translateX(-50%) scale(.7);
+    transform-origin:center top; max-width:none !important; max-height:none !important; }
+
+/* small helpers */
+.reveal p.footnote { position:absolute; bottom:22px; left:82px; right:82px;
+    font-size:.42em !important; color:var(--gray); line-height:1.4; }
+.reveal .gray { color:var(--gray); }
+.reveal .red { color:var(--title-red); }
+.reveal .q { color:var(--q); } .reveal .k { color:var(--k); } .reveal .v { color:var(--v); }
+.cols { display:grid; grid-template-columns:1fr 1fr; gap:40px; }
+.reveal .formula { font-size:.75em; margin:.4em 0 .7em; color:var(--black); }
+.reveal pre { width:100%; box-shadow:none; margin:.3em 0; font-size:.5em; }
+.reveal pre code { font-family:Monaco,"Courier New",monospace; background:#F4F4F4;
+    color:#000; padding:14px 18px; line-height:1.5; max-height:none; border-left:3px solid var(--title-red); }
+.reveal pre code .c { color:var(--gray); }
+.reveal pre code .hl { color:var(--title-red); font-weight:bold; }
+.reveal table { font-size:.58em; border-collapse:collapse; margin:.4em 0; }
+.reveal table th, .reveal table td { border:none; border-bottom:1px solid var(--dim); padding:6px 14px; text-align:left; }
+.reveal table th { color:var(--gray); font-weight:normal; }
+.reveal table td.n, .reveal table th.n { text-align:right; font-variant-numeric:tabular-nums; }
+.reveal .box { border-left:3px solid var(--title-red); padding:4px 0 4px 16px; margin:.6em 0; }
+.reveal .box p { margin:0; }
+.reveal p.formula { font-size:.52em !important; margin:.2em 0 .5em; }

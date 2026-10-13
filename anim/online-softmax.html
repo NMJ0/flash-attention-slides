@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Online softmax</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.vec { display:grid; grid-template-columns:260px repeat(3, auto); gap:6px 26px; align-items:center; margin:6px 0; }
+.vec .name { font-size:22px; text-align:right; color:var(--gray); }
+.vec .name b { color:var(--black); font-weight:normal; }
+.blk { display:flex; gap:4px; padding:4px; border-radius:8px; border:3px solid transparent; transition:all .25s; }
+.blk.cur { border-color:var(--title-red); }
+.blk.todo .cell { opacity:.28; }
+.blk .cell { min-width:72px; }
+.cell.rs { box-shadow:inset 0 0 0 3px var(--v); }
+.blab { font-size:19px; color:var(--gray); text-align:center; }
+.state { display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; margin-top:16px; }
+.sv { border:2px solid var(--dim); border-radius:10px; padding:10px 18px; }
+.sv .k { font-size:21px; color:var(--gray); }
+.sv .x { font-family:Monaco,"Courier New",monospace; font-size:36px; }
+.sv .x s { color:var(--gray); font-size:24px; }
+table { border-collapse:collapse; font-size:21px; margin-top:16px; font-variant-numeric:tabular-nums; }
+th, td { padding:5px 18px; border-bottom:1px solid var(--dim); text-align:right; font-family:Monaco,"Courier New",monospace; }
+th { font-family:Arial,Helvetica,sans-serif; color:var(--gray); font-weight:normal; }
+tr.now td { background:#FBEFEF; }
+.cols { display:grid; grid-template-columns:1fr 1fr; gap:28px; align-items:start; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <button id="reset" type="button">Reset</button>
+  <button id="next" class="primary" type="button">Next block ▶</button>
+  <span class="lab">one row of scores, 12 keys, processed 4 at a time (a 4-key tile of K and V)</span>
+</div>
+<p class="caption" id="caption"></p>
+<div id="vecs"></div>
+<div class="state" id="state"></div>
+<div class="cols">
+  <div class="calc" id="calc"></div>
+  <div><table id="hist"></table></div>
+</div>
+<script src="lib.js"></script>
+<script>
+const randn=makeRandn(11);
+const N=12,BS=4,NB=N/BS;
+const x=Array.from({length:N},(_,i)=>+(randn()*1.3+(i>=4&&i<8?0.9:0)).toFixed(2));
+x[1]=0.4;x[6]=2.6;x[10]=1.9;
+const v=Array.from({length:N},()=>+(randn()*1.0).toFixed(2));
+const exact=(()=>{const p=softmaxRow(x);return{p,o:p.reduce((a,pi,i)=>a+pi*v[i],0)};})();
+// states after each block
+const states=[{m:-Infinity,l:0,o:0}];
+for(let b=0;b<NB;b++){
+  const s=states[b],blk=x.slice(b*BS,b*BS+BS),vb=v.slice(b*BS,b*BS+BS);
+  const bm=Math.max(...blk),mn=Math.max(s.m,bm),a=s.m===-Infinity?0:Math.exp(s.m-mn);
+  const e=blk.map(t=>Math.exp(t-mn));
+  const l=a*s.l+e.reduce((p,q)=>p+q,0),o=a*s.o+e.reduce((p,q,i)=>p+q*vb[i],0);
+  states.push({m:mn,l,o,bm,a,e,prev:s});
+}
+let step=0;
+function cellRow(vals,opts){
+  return Array.from({length:NB},(_,b)=>{
+    const cls="blk"+(b===step-1&&step<=NB?" cur":"")+(b>=step&&step<=NB?" todo":"");
+    return `<div class="${cls}">`+vals.slice(b*BS,b*BS+BS).map((t,i)=>{
+      const k=b*BS+i;const st=opts.style?opts.style(k,t):"";
+      return `<div class="cell ${opts.cls?opts.cls(k):""}" style="${st}">${t==null?"":fmt(t)}</div>`;}).join("")+`</div>`;}).join("");
+}
+function render(){
+  const done=Math.min(step,NB),s=states[done];
+  const xmax=Math.max(...x.map(Math.abs));
+  const heat=(t,col,sc)=>`background:color-mix(in srgb, ${col} ${Math.round(Math.min(1,Math.abs(t)/sc)*70)}%, var(--cell));${Math.abs(t)/sc>0.75?"color:#fff":""}`;
+  const w=x.map((t,k)=>k<done*BS?Math.exp(t-s.m):null);
+  const rescaled=k=>step>=2&&step<=NB&&k<(step-1)*BS&&states[step].a<1?"rs":"";
+  let h=`<div class="vec"><div class="name"><b>scores x</b> (row of S)</div>${cellRow(x,{style:(k,t)=>heat(t,t>=0?"var(--pos)":"var(--neg)",xmax)})}</div>`;
+  h+=`<div class="vec"><div class="name"><b>values v</b> (d = 1)</div>${cellRow(v,{style:(k,t)=>heat(t,"var(--v)",2.5)})}</div>`;
+  h+=`<div class="vec"><div class="name"><b>e<sup>x − m</sup></b> with current m</div>${cellRow(w,{style:(k,t)=>t==null?"":heat(t,"var(--p)",1),cls:rescaled})}</div>`;
+  h+=`<div class="vec"><div class="name"></div>${Array.from({length:NB},(_,b)=>`<div class="blab">tile ${b+1}: keys ${b*BS}–${b*BS+BS-1}</div>`).join("")}</div>`;
+  $("#vecs").innerHTML=h;
+  const ps=s.prev;
+  const box=(k,val,prev)=>`<div class="sv"><div class="k">${k}</div><div class="x">${prev!=null&&step>0&&step<=NB?`<s>${fmt(prev,3)}</s> → `:""}${fmt(val,3)}</div></div>`;
+  $("#state").innerHTML=box("m: running max",s.m,ps&&ps.m)+box("ℓ: running sum of e<sup>x − m</sup>",s.l,ps&&ps.l)+box("o: running Σ e<sup>x − m</sup>·v (unnormalized)",s.o,ps&&ps.o);
+  let c;
+  if(step===0){c=`start:  m = −∞,  ℓ = 0,  o = 0<br><span class="h">Standard softmax needs three passes over the whole row (max, sum, normalize). Here each tile is read <b>once</b>.</span>`;
+    $("#caption").innerHTML="FlashAttention never has a whole row of scores: they arrive one <b>tile</b> at a time. Online softmax keeps three running numbers per row and corrects them as each tile arrives.";}
+  else if(step<=NB){const b=step-1;
+    c=`tile ${step}: block max = <b>${fmt(s.bm)}</b>   m<sub>new</sub> = max(${fmt(ps.m)}, ${fmt(s.bm)}) = <b>${fmt(s.m)}</b><br>`+
+      `rescale α = e<sup>m<sub>old</sub> − m<sub>new</sub></sup> = <b>${ps.m===-Infinity?"0 (nothing yet)":fmt(s.a,3)}</b><br>`+
+      `ℓ = α·${fmt(ps.l,3)} + Σ e<sup>x − m</sup> = <b>${fmt(s.l,3)}</b><br>o = α·${fmt(ps.o,3)} + Σ e<sup>x − m</sup>·v = <b>${fmt(s.o,3)}</b>`;
+    $("#caption").innerHTML=s.a<1&&ps.m!==-Infinity?"The new tile has a <b>larger maximum</b>, so everything accumulated so far was exponentiated against the wrong max. Multiplying ℓ and o by α fixes it, without revisiting old keys (orange outlines).":
+      ps.m===-Infinity?"First tile: its max becomes m. Exponentiate the tile against m and start the running sum ℓ and the running output o.":"This tile's max is <b>not larger</b> than m, so α = 1 and the old sums need no correction: just add the new terms.";}
+  else{c=`finish:  output = o / ℓ = ${fmt(s.o,4)} / ${fmt(s.l,4)} = <b>${fmt(s.o/s.l,4)}</b><br>exact softmax(x)·v over the full row      = <b>${fmt(exact.o,4)}</b><br><span class="h">identical: online softmax is exact, not an approximation. Divide once, at the end.</span>`;
+    $("#caption").innerHTML="After the last tile, divide by ℓ once. The result matches the three-pass softmax exactly, but the row was read only once and never stored as a whole.";}
+  $("#calc").innerHTML=c;
+  let t=`<tr><th>after</th><th>m</th><th>α</th><th>ℓ</th><th>o</th></tr>`;
+  for(let i=0;i<=done;i++){const q=states[i];t+=`<tr class="${i===done?"now":""}"><td style="font-family:Arial">${i?"tile "+i:"start"}</td><td>${fmt(q.m)}</td><td>${i?(states[i-1].m===-Infinity?"–":fmt(q.a,3)):"–"}</td><td>${fmt(q.l,3)}</td><td>${fmt(q.o,3)}</td></tr>`;}
+  $("#hist").innerHTML=t;
+  $("#next").textContent=step<NB?"Next tile ▶":(step===NB?"Normalize ▶":"Done");
+  $("#next").disabled=step>NB;
+}
+$("#next").onclick=()=>{if(step<=NB){step++;render();}};
+$("#reset").onclick=()=>{step=0;render();};
+render();
+autoStep($("#next"));
+</script>
+</body>
+</html>

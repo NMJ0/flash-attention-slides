@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Study: FlashAttention</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<!-- ================= TITLE ================= -->
+<section class="title-slide">
+  <p class="main-title">CS6886 Systems for Deep Learning · ML Compilers</p>
+  <h1 class="lecture-title">Case study: FlashAttention</h1>
+  <p class="info">October 2026</p>
+  <p class="info">Noel Manuel (EP22B035)</p>
+  <p class="info">IIT Madras · Course instructor: Dr. Gopalakrishnan Srinivasan</p>
+</section>
+
+<!-- ================= OUTLINE ================= -->
+<section class="outline-slide">
+  <h2>Outline</h2>
+  <ul class="outline-items">
+    <li>Attention, step by step</li>
+    <li>Why attention is memory-bound</li>
+    <li>FlashAttention: tiling + online softmax</li>
+    <li>Results, and what it means for compilers</li>
+  </ul>
+</section>
+
+<!-- ================= 1. ATTENTION ================= -->
+<section>
+  <h2>Attention is where tokens meet</h2>
+  <ul>
+    <li>A transformer block maps <code>[n × d] → [n × d]</code>: one row per token</li>
+    <li>LayerNorm, projections, MLP: each row on its own</li>
+    <li><b>Attention</b> is the only op where one token reads another</li>
+    <li>Two matrix multiplies with a softmax in between:</li>
+  </ul>
+  <p class="formula">\[ O \;=\; \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}} + \text{mask}\right) V \]</p>
+  <ul>
+    <li>That chain, <b>GEMM → softmax → GEMM</b>, is what this case study is about</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Queries, keys and values</h2>
+  <ul>
+    <li>Three ordinary GEMMs per token row:
+      <ul>
+        <li><span class="q"><b>Query</b></span> <code>Q = X·W<sub>q</sub></code>: what this token is looking for</li>
+        <li><span class="k"><b>Key</b></span> <code>K = X·W<sub>k</sub></code>: what this token offers</li>
+        <li><span class="v"><b>Value</b></span> <code>V = X·W<sub>v</sub></code>: what it hands over</li>
+      </ul></li>
+    <li><b>Multi-head</b>: split d into h heads of d<sub>k</sub> = d / h columns
+      <ul><li>a reshape to <code>[h × n × d<sub>k</sub>]</code>, no arithmetic</li>
+          <li>Llama-3-8B: d = 4096, h = 32, d<sub>k</sub> = 128</li></ul></li>
+    <li>From here on: <b>one head</b>, <code>[n × d<sub>k</sub>]</code> matrices</li>
+  </ul>
+</section>
+
+<section class="demo-slide">
+  <h2>Attention, one step at a time</h2>
+  <div class="iframe-wrap"><iframe src="anim/attention.html" title="Attention step by step"></iframe></div>
+</section>
+
+<section>
+  <h2>The same computation at real size</h2>
+  <p class="gray">Llama-3-8B shapes, one layer, n = 8,192 tokens, FP16</p>
+  <table>
+    <tr><th>tensor</th><th>shape</th><th class="n">size</th></tr>
+    <tr><td><span class="q">Q</span>, <span class="k">K</span>, <span class="v">V</span>, O (each)</td><td><code>[32 × 8192 × 128]</code></td><td class="n">67 MB</td></tr>
+    <tr><td><b>S</b> = QKᵀ, and <b>P</b> = softmax(S)</td><td><code>[32 × 8192 × 8192]</code></td><td class="n red">4.3 GB each</td></tr>
+  </table>
+  <ul>
+    <li>S and P are <b>64× larger</b> than Q, K, V, O and grow as <b>n²</b></li>
+    <li>Two GEMMs: 4·h·n²·d<sub>k</sub> ≈ <b>1.1 TFLOP</b> per layer, on tensor cores</li>
+    <li>Scale, mask, softmax: <b>≈ 1 FLOP per byte</b> moved</li>
+    <li>Is attention limited by <b>FLOPs</b> or by <b>bytes</b>?</li>
+  </ul>
+</section>
+
+<section class="outline-slide">
+  <h2>Outline</h2>
+  <ul class="outline-items">
+    <li class="dim">Attention, step by step</li>
+    <li>Why attention is memory-bound</li>
+    <li>FlashAttention: tiling + online softmax</li>
+    <li>Results, and what it means for compilers</li>
+  </ul>
+</section>
+
+<!-- ================= 2. MEMORY-BOUND ================= -->
+<section>
+  <h2>The GPU memory hierarchy</h2>
+  <p class="gray">RTX 4090 (Ada, sm_89), used for every measurement in this deck</p>
+  <table>
+    <tr><th>level</th><th class="n">size</th><th>where</th></tr>
+    <tr><td>registers</td><td class="n">256 KB per SM</td><td>in each of the 128 SMs</td></tr>
+    <tr><td>shared memory / L1</td><td class="n">128 KB per SM</td><td>in each SM</td></tr>
+    <tr><td>L2 cache</td><td class="n">72 MB</td><td>shared by all SMs</td></tr>
+    <tr><td><b>HBM / DRAM</b> (GDDR6X)</td><td class="n">24 GB</td><td>off chip, <b>1.0 TB/s</b></td></tr>
+  </table>
+  <ul>
+    <li>Tensor cores: <b>165 TFLOP/s</b> (FP16, FP32 accumulate)</li>
+    <li>Ridge point ≈ <b>164 FLOPs per byte</b>; softmax is <b>~100× below it</b></li>
+  </ul>
+  <p class="footnote">Spec figures from the NVIDIA Ada GPU architecture whitepaper.</p>
+</section>
+
+<section class="demo-slide">
+  <h2>Where the bytes go</h2>
+  <div class="iframe-wrap"><iframe src="anim/dataflow.html" title="Attention dataflow through HBM"></iframe></div>
+</section>
+
+<section>
+  <h2>Kernel fusion helps, then stops</h2>
+  <ul>
+    <li><b>Eager</b>: 6 kernels, n × n data crosses HBM <b>10 times</b></li>
+    <li><b>torch.compile</b>: ÷√d, mask, softmax fused into <b>one Triton kernel</b>
+      <ul><li>10 passes → 4; 49 ms → 22 ms at n = 8,192</li></ul></li>
+    <li>Still only 25 TFLOP/s: the GEMMs are separate library calls
+      <ul><li>each GEMM's output lands in HBM before the next kernel runs</li></ul></li>
+    <li>Next step: <b>GEMM → softmax → GEMM in one kernel</b></li>
+  </ul>
+</section>
+
+<section class="outline-slide">
+  <h2>Outline</h2>
+  <ul class="outline-items">
+    <li class="dim">Attention, step by step</li>
+    <li class="dim">Why attention is memory-bound</li>
+    <li>FlashAttention: tiling + online softmax</li>
+    <li>Results, and what it means for compilers</li>
+  </ul>
+</section>
+
+<!-- ================= 3. FLASHATTENTION ================= -->
+<section>
+  <h2>FlashAttention: the idea</h2>
+  <ul>
+    <li><b>IO-aware</b>: count HBM reads and writes, not FLOPs</li>
+    <li><b>Tiling</b>: split Q, K, V into blocks that fit on chip</li>
+    <li><b>Fusion</b>: one kernel does QKᵀ, mask, softmax, ·V
+      <ul><li>S and P exist only as one tile in registers</li></ul></li>
+    <li>Obstacle: softmax needs the <b>max and sum of a whole row</b></li>
+    <li>Fix: <b>online softmax</b></li>
+  </ul>
+  <p class="footnote">Dao, Fu, Ermon, Rudra, Ré, “FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness”, NeurIPS 2022.</p>
+</section>
+
+<section>
+  <h2>Online softmax</h2>
+  <p>Standard: three passes over a row</p>
+  <p class="formula">\[ m = \max_j x_j \qquad \ell = \sum_j e^{x_j - m} \qquad o = \frac{1}{\ell}\sum_j e^{x_j - m}\, v_j \]</p>
+  <p>Online: update running \(m, \ell, o\) one tile \(t\) at a time</p>
+  <p class="formula">\[ m^{(t)} = \max\!\big(m^{(t-1)},\ \max_{j \in t} x_j\big) \qquad \alpha = e^{\,m^{(t-1)} - m^{(t)}} \]
+  \[ \ell^{(t)} = \alpha\,\ell^{(t-1)} + \sum_{j\in t} e^{x_j - m^{(t)}} \qquad o^{(t)} = \alpha\, o^{(t-1)} + \sum_{j\in t} e^{x_j - m^{(t)}}\, v_j \]</p>
+  <p>Divide \(o\) by \(\ell\) once at the end: <b>exact</b>, one pass</p>
+  <p class="footnote">Online normalizer: Milakov &amp; Gimelshein, “Online normalizer calculation for softmax”, 2018.</p>
+</section>
+
+<section class="demo-slide">
+  <h2>Online softmax on one row</h2>
+  <div class="iframe-wrap"><iframe src="anim/online-softmax.html" title="Online softmax"></iframe></div>
+</section>
+
+<section class="demo-slide">
+  <h2>FlashAttention: the tiled loop</h2>
+  <div class="iframe-wrap"><iframe src="anim/flash-tiling.html" title="FlashAttention tiling"></iframe></div>
+</section>
+
+<section>
+  <h2>What it costs, what it saves</h2>
+  <ul>
+    <li><b>HBM traffic</b>, M = on-chip memory size:
+      <ul><li>standard \(\Theta(N d + N^2)\) → FlashAttention \(\Theta(N^2 d^2 / M)\)</li></ul></li>
+    <li><b>Memory</b>: \(O(N)\) extra, not \(O(N^2)\)</li>
+    <li><b>FLOPs</b>: same two GEMMs, plus a rescale per tile</li>
+    <li><b>Exact</b>: differs only by floating-point rounding</li>
+    <li><b>Backward</b>: P is <b>recomputed</b> from Q, K, not stored
+      <ul><li>more FLOPs, far fewer bytes</li></ul></li>
+  </ul>
+  <p class="footnote">HBM bounds: Dao et al. 2022, Theorem 2. K and V are re-read once per Q tile; tiles grow with M.</p>
+</section>
+
+<section class="outline-slide">
+  <h2>Outline</h2>
+  <ul class="outline-items">
+    <li class="dim">Attention, step by step</li>
+    <li class="dim">Why attention is memory-bound</li>
+    <li class="dim">FlashAttention: tiling + online softmax</li>
+    <li>Results, and what it means for compilers</li>
+  </ul>
+</section>
+
+<!-- ================= 4. RESULTS + COMPILERS ================= -->
+<section class="demo-slide">
+  <h2>Measured on an RTX 4090</h2>
+  <div class="iframe-wrap"><iframe src="anim/results.html" title="Benchmark results"></iframe></div>
+</section>
+
+<section>
+  <h2>Why didn't a compiler find it?</h2>
+  <ul>
+    <li>Fusing elementwise ops and reductions: easy (6 → 3 kernels)</li>
+    <li>FlashAttention needs all three at once:
+      <ul><li>fuse <b>two GEMMs</b> around a reduction</li>
+          <li><b>rewrite softmax</b> to work on partial rows</li>
+          <li>size tiles to <b>on-chip memory</b></li></ul></li>
+    <li>The rewrite is <b>algebra</b>, not a loop transformation
+      <ul><li>no schedule search over the original program reaches it</li></ul></li>
+    <li>So compilers <b>pattern-match</b> attention to a hand-written kernel
+      <ul><li>Inductor: 28 patterns; our causal version matched none</li></ul></li>
+  </ul>
+</section>
+
+<section>
+  <h2>After FlashAttention</h2>
+  <ul>
+    <li><b>FlashAttention-2</b> (2023): outer loop over Q tiles, as animated
+      <ul><li>parallel over sequence length, fewer non-GEMM FLOPs</li></ul></li>
+    <li><b>FlashAttention-3</b> (2024): Hopper GPUs
+      <ul><li>async tile loads (TMA), softmax overlapped with GEMMs, FP8</li></ul></li>
+    <li><b>FlexAttention</b> (PyTorch 2.5): mask or score change as a Python function
+      <ul><li><code>torch.compile</code> generates a flash-style Triton kernel</li></ul></li>
+    <li>Experts find the algorithm; compilers absorb it as a <b>template</b></li>
+  </ul>
+</section>
+
+<section>
+  <h2>Takeaways</h2>
+  <ul>
+    <li>Attention is limited by <b>bytes, not FLOPs</b>: S and P dominate</li>
+    <li>Fusing <b>across a reduction</b> needs an algebraic rewrite</li>
+    <li>Same maths, same GPU, n = 8,192:
+      <ul><li><b>13×</b> faster than eager, <b>6×</b> faster than torch.compile</li>
+          <li><b>127×</b> less extra memory; n = 16,384 fits</li>
+          <li>149 TFLOP/s, about <b>90% of peak</b></li></ul></li>
+    <li>Compilers must model the <b>memory hierarchy</b>, not just arithmetic</li>
+  </ul>
+  <p class="footnote">Benchmark: <code>flash_attention/attention_bench.py</code> in the lecture repository. Batch 1, 32 heads, d<sub>k</sub> = 128, FP16, causal, PyTorch 2.12.</p>
+</section>
+
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/math/math.js"></script>
+<script>
+Reveal.initialize({
+  width: 1200, height: 700, margin: 0, center: false,
+  hash: true, controls: true, progress: true, transition: 'slide',
+  katex: { version: '0.16.11' },
+  plugins: [ RevealMath.KaTeX ]
+});
+</script>
+</body>
+</html>
