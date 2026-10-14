@@ -26,7 +26,7 @@
   <ul class="outline-items">
     <li>The transformer, step by step</li>
     <li>FlashAttention: tiling + online softmax</li>
-    <li>Results, and what it means for compilers</li>
+    <li>Results</li>
   </ul>
 </section>
 
@@ -87,7 +87,7 @@
   <ul class="outline-items">
     <li class="dim">The transformer, step by step</li>
     <li>FlashAttention: tiling + online softmax</li>
-    <li>Results, and what it means for compilers</li>
+    <li>Results</li>
   </ul>
 </section>
 
@@ -135,31 +135,12 @@
   <div class="iframe-wrap"><iframe src="anim/online-softmax.html" title="Online softmax"></iframe></div>
 </section>
 
-<section class="demo-slide">
-  <h2>FlashAttention: the tiled loop</h2>
-  <div class="iframe-wrap"><iframe src="anim/flash-tiling.html" title="FlashAttention tiling"></iframe></div>
-</section>
-
-<section>
-  <h2>What it costs, what it saves</h2>
-  <ul>
-    <li><b>HBM traffic</b>, M = on-chip memory size:
-      <ul><li>standard \(\Theta(N d + N^2)\) → FlashAttention \(\Theta(N^2 d^2 / M)\)</li></ul></li>
-    <li><b>Memory</b>: \(O(N)\) extra, not \(O(N^2)\)</li>
-    <li><b>FLOPs</b>: same two GEMMs, plus a rescale per tile</li>
-    <li><b>Exact</b>: differs only by floating-point rounding</li>
-    <li><b>Backward</b>: P is <b>recomputed</b> from Q, K, not stored
-      <ul><li>more FLOPs, far fewer bytes</li></ul></li>
-  </ul>
-  <p class="footnote">HBM bounds: Dao et al. 2022, Theorem 2. K and V are re-read once per Q tile; tiles grow with M.</p>
-</section>
-
 <section class="outline-slide">
   <h2>Outline</h2>
   <ul class="outline-items">
     <li class="dim">The transformer, step by step</li>
     <li class="dim">FlashAttention: tiling + online softmax</li>
-    <li>Results, and what it means for compilers</li>
+    <li>Results</li>
   </ul>
 </section>
 
@@ -167,34 +148,6 @@
 <section class="demo-slide">
   <h2>Measured on an RTX 4090</h2>
   <div class="iframe-wrap"><iframe src="anim/results.html" title="Benchmark results"></iframe></div>
-</section>
-
-<section>
-  <h2>Why didn't a compiler find it?</h2>
-  <ul>
-    <li>Fusing elementwise ops and reductions into neighbours: routine</li>
-    <li>FlashAttention needs all three at once:
-      <ul><li>fuse <b>two GEMMs</b> around a reduction</li>
-          <li><b>rewrite softmax</b> to work on partial rows</li>
-          <li>size tiles to <b>on-chip memory</b></li></ul></li>
-    <li>The rewrite is <b>algebra</b>, not a loop transformation
-      <ul><li>no schedule search over the original program reaches it</li></ul></li>
-    <li>So compilers <b>pattern-match</b> attention to a hand-written kernel
-      <ul><li>PyTorch Inductor: 28 hand-written attention patterns</li></ul></li>
-  </ul>
-</section>
-
-<section>
-  <h2>After FlashAttention</h2>
-  <ul>
-    <li><b>FlashAttention-2</b> (2023): outer loop over Q tiles, as animated
-      <ul><li>parallel over sequence length, fewer non-GEMM FLOPs</li></ul></li>
-    <li><b>FlashAttention-3</b> (2024): Hopper GPUs
-      <ul><li>async tile loads (TMA), softmax overlapped with GEMMs, FP8</li></ul></li>
-    <li><b>FlexAttention</b> (PyTorch 2.5): mask or score change as a Python function
-      <ul><li><code>torch.compile</code> generates a flash-style Triton kernel</li></ul></li>
-    <li>Experts find the algorithm; compilers absorb it as a <b>template</b></li>
-  </ul>
 </section>
 
 <section>

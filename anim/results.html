@@ -25,9 +25,9 @@
   <div class="seg" id="metric"></div>
   <span class="lab">batch 1, 32 heads, d<sub>k</sub> = 128, FP16, causal · median of 20 runs · RTX 4090, PyTorch 2.12</span>
 </div>
-<p class="caption" id="caption"></p>
-<div class="legend"><span><i class="c-e"></i>explicit, eager (6 kernels)</span><span><i class="c-c"></i>explicit, torch.compile (3 kernels)</span><span><i class="c-f"></i>FlashAttention, SDPA flash backend (1 kernel)</span><span style="margin-left:auto">max |difference| ≤ 4·10⁻³ (FP16 rounding)</span></div>
+<div class="legend"><span><i class="c-e"></i>explicit, eager (6 kernels)</span><span><i class="c-c"></i>explicit, torch.compile (3 kernels)</span><span><i class="c-f"></i>FlashAttention (1 kernel)</span></div>
 <div class="chart" id="chart"></div>
+<p class="caption" id="caption" style="margin-top:14px"></p>
 <script src="lib.js"></script>
 <script>
 /* flash_attention/results_attention.txt in the lecture repo */
@@ -66,6 +66,7 @@ function render(){
 Object.entries(M).forEach(([k,v])=>{const b=el("button","",v.t);b.type="button";b.dataset.v=k;b.onclick=()=>{metric=k;render();};$("#metric").appendChild(b);});
 window.anim={step(d){const ks=Object.keys(M),n=ks.indexOf(metric)+d;if(n<0||n>=ks.length)return false;metric=ks[n];render();return true;}};
 render();
+autoStep({click(){anim.step(1);}});
 </script>
 </body>
 </html>
