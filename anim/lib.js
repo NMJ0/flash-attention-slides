@@ -20,14 +20,13 @@ function matEl(M,o={}){
   const fig=el("figure","mat"+(o.kind?" k-"+o.kind:""));
   fig.appendChild(el("div","",`<span class="nm">${o.name}</span><span class="shape">[${R} × ${Cn}]</span>`));
   const g=el("div","grid"+(o.compact?" cmp":""));
-  g.style.gridTemplateColumns=`auto repeat(${Cn}, auto)`;
+  g.style.gridTemplateColumns=(o.noRl?"":"auto ")+`repeat(${Cn}, auto)`;
   let scale=0;for(const r of M)for(const v of r)if(isFinite(v))scale=Math.max(scale,Math.abs(v));
   if(o.prob)scale=1;if(!scale)scale=1;
   const rl=o.rl||M.map((_,i)=>i),cl=o.cl||M[0].map((_,j)=>j);
-  g.appendChild(el("div","cl",""));
-  cl.forEach(c=>g.appendChild(el("div","cl",esc(c))));
+  if(!o.noCl){if(!o.noRl)g.appendChild(el("div","cl",""));cl.forEach(c=>g.appendChild(el("div","cl",esc(c))));}
   M.forEach((row,i)=>{
-    g.appendChild(el("div","rl",esc(rl[i])));
+    if(!o.noRl)g.appendChild(el("div","rl",esc(rl[i])));
     row.forEach((v,j)=>{
       const c=el("div","cell",o.compact?"":fmt(v));c.dataset.r=i;c.dataset.c=j;
       if(o.compact)c.title=fmt(v);
