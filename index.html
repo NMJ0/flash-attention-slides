@@ -106,18 +106,32 @@
 </section>
 
 <section>
-  <h2>Online softmax</h2>
-  <p>Standard: three passes over a row</p>
-  <p class="formula">\[ m = \max_j x_j \qquad \ell = \sum_j e^{x_j - m} \qquad o = \frac{1}{\ell}\sum_j e^{x_j - m}\, v_j \]</p>
-  <p>Online: update running \(m, \ell, o\) one tile \(t\) at a time</p>
-  <p class="formula">\[ m^{(t)} = \max\!\big(m^{(t-1)},\ \max_{j \in t} x_j\big) \qquad \alpha = e^{\,m^{(t-1)} - m^{(t)}} \]
-  \[ \ell^{(t)} = \alpha\,\ell^{(t-1)} + \sum_{j\in t} e^{x_j - m^{(t)}} \qquad o^{(t)} = \alpha\, o^{(t-1)} + \sum_{j\in t} e^{x_j - m^{(t)}}\, v_j \]</p>
-  <p>Divide \(o\) by \(\ell\) once at the end: <b>exact</b>, one pass</p>
+  <h2>Problem: softmax needs the whole row</h2>
+  <p class="formula">\[ O_i \;=\; \sum_j p_{ij}\, v_j, \qquad p_{ij} = \frac{e^{\,s_{ij} - m_i}}{\ell_i}, \qquad m_i = \max_j s_{ij}, \qquad \ell_i = \sum_j e^{\,s_{ij} - m_i} \]</p>
+  <ul>
+    <li>A tile brings in only <b>some</b> of row i's keys</li>
+    <li>Two things are unknown until the <b>last</b> tile:
+      <ul><li>the row max \(m_i\): a later tile may hold a bigger score</li>
+          <li>the row sum \(\ell_i\): so we cannot divide yet</li></ul></li>
+    <li>Standard softmax therefore needs the full row of S in memory</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Online softmax: divide once, at the end</h2>
+  <p>\(\ell_i\) is the <b>same</b> for every term of the row, so it can be pulled out of the sum:</p>
+  <p class="formula">\[ O_i \;=\; \sum_j \frac{e^{\,s_{ij} - m_i}}{\ell_i}\, v_j \;=\; \frac{1}{\ell_i} \underbrace{\sum_j e^{\,s_{ij} - m_i}\, v_j}_{o_i} \]</p>
+  <p>Keep running \(m, \ell, o\) on chip, updated per tile; nothing is divided:</p>
+  <p class="formula">\[ m \leftarrow \max(m, \max_{j \in \text{tile}} s_j), \quad \alpha = e^{\,m_{\text{old}} - m}, \quad \ell \leftarrow \alpha\,\ell + \sum_{j\in\text{tile}} e^{\,s_j - m}, \quad o \leftarrow \alpha\, o + \sum_{j\in\text{tile}} e^{\,s_j - m}\, v_j \]</p>
+  <ul>
+    <li>\(\alpha\) fixes terms made with an old max: \(e^{s - m_{\text{old}}}\, e^{m_{\text{old}} - m_{\text{new}}} = e^{s - m_{\text{new}}}\)</li>
+    <li>After the last tile, \(\ell\) is the full row sum: \(O = o / \ell\), <b>exactly</b></li>
+  </ul>
   <p class="footnote">Online normalizer: Milakov &amp; Gimelshein, “Online normalizer calculation for softmax”, 2018.</p>
 </section>
 
 <section class="demo-slide">
-  <h2>Online softmax on one row</h2>
+  <h2>Online softmax, tile by tile</h2>
   <div class="iframe-wrap"><iframe src="anim/online-softmax.html" title="Online softmax"></iframe></div>
 </section>
 
