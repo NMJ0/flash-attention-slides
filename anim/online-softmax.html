@@ -2,55 +2,59 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Online softmax, tile by tile</title>
+<title>Online softmax, step by step</title>
 <link rel="stylesheet" href="common.css">
 <style>
-body { padding:18px 36px; }
+body { padding:16px 36px; }
 .head { display:flex; align-items:baseline; gap:16px; }
 .head .n { font-family:Monaco,"Courier New",monospace; font-size:20px; color:#fff; background:var(--title-red); border-radius:4px; padding:1px 9px; }
 .head h3 { margin:0; font-size:27px; font-weight:normal; color:var(--title-red); }
 .head .sp { flex:1; }
 .head button { font-size:18px; padding:4px 12px; }
-.cap { font-size:21px; line-height:1.4; margin:6px 0 10px; min-height:88px; }
+.cap { font-size:20px; line-height:1.4; margin:6px 0 8px; min-height:56px; }
 .cap b { color:var(--title-red); font-weight:normal; }
 
-.mem { border:2px solid; border-radius:10px; padding:6px 14px 10px; margin-bottom:10px; }
-.mem.hbm { border-color:var(--hbm); }
+/* where the data moves in this step */
+.move { display:flex; gap:12px; align-items:center; margin-bottom:8px; font-size:19px; }
+.move .tag { font-family:Monaco,"Courier New",monospace; font-size:16px; padding:3px 10px; border-radius:4px; color:#fff; white-space:nowrap; }
+.tag.load { background:var(--sram); } .tag.comp { background:var(--q); } .tag.store { background:var(--title-red); } .tag.none { background:var(--gray); }
+.move .cnt { margin-left:auto; font-size:16px; color:var(--gray); white-space:nowrap; }
+.move .cnt b { font-family:Monaco,"Courier New",monospace; color:var(--black); font-weight:normal; }
+
+.mem { border:2px solid; border-radius:10px; padding:5px 14px 8px; }
+.mem.hbm { border-color:var(--hbm); margin-bottom:8px; }
 .mem.sram { border-color:var(--sram); }
-.mem h4 { margin:0 0 4px; font-size:19px; font-weight:normal; }
+.mem h4 { margin:0 0 3px; font-size:18px; font-weight:normal; }
 .mem.hbm h4 { color:var(--hbm); } .mem.sram h4 { color:var(--sram); }
-.mem h4 span { color:var(--gray); font-size:16px; margin-left:8px; }
-.items { display:flex; gap:26px; align-items:flex-start; flex-wrap:nowrap; }
-.item .nm { font-size:18px; font-weight:bold; color:var(--kc, var(--black)); white-space:nowrap; }
-.item .nm i { font-style:normal; font-weight:normal; color:var(--gray); font-size:15px; margin-left:4px; }
-.tiles { display:flex; flex-direction:column; gap:7px; margin-top:3px; }
+.mem h4 span { color:var(--gray); font-size:15px; margin-left:8px; }
+.sub { font-size:14px; color:var(--gray); margin:4px 0 2px; }
+.items { display:flex; gap:14px; align-items:flex-start; }
+.mem.hbm .items { gap:34px; }
+.item { border:2px solid transparent; border-radius:6px; padding:1px 5px 3px; }
+.item.rd { border-color:var(--q); background:#EAF1F9; }
+.item.wr { border-color:var(--title-red); background:#FBEFEF; }
+.item.off .nm { color:#C9CDD2; }
+.item .nm { font-size:17px; font-weight:bold; color:var(--kc, var(--black)); white-space:nowrap; }
+.item .nm i { font-style:normal; font-weight:normal; color:var(--gray); font-size:14px; margin-left:4px; }
+.item .eq { font-size:12.5px; color:var(--gray); white-space:nowrap; }
+.tiles { display:flex; flex-direction:column; gap:6px; margin-top:2px; }
 .tile { display:grid; gap:2px; padding:2px; border-radius:4px; border:2px solid transparent; position:relative; }
 .tile.load { border-color:var(--sram); background:#E7F3EC; }
 .tile.write { border-color:var(--title-red); background:#FBEFEF; }
-.tile.skip { opacity:.45; background:repeating-linear-gradient(135deg, #fff 0 6px, #F2D3D2 6px 12px); }
-.tile .tl { position:absolute; right:4px; top:-10px; font-size:12px; line-height:1; padding:1px 5px; border-radius:3px; background:#fff; border:1px solid currentColor; color:var(--gray); white-space:nowrap; z-index:2; }
-.mem.sram .c { min-width:50px; font-size:14px; height:28px; }
-.mem.sram .items { gap:9px; }
-.tile.load .tl { color:var(--sram); } .tile.write .tl { color:var(--title-red); } .tile.skip .tl { color:var(--mask); }
-.c { font-family:Monaco,"Courier New",monospace; font-size:15px; min-width:58px; height:30px; display:flex; align-items:center; justify-content:center;
-     border-radius:3px; background:var(--cell); font-variant-numeric:tabular-nums; }
+.tile .tl { position:absolute; right:4px; top:-10px; font-size:12px; line-height:1; padding:1px 5px; border-radius:3px; background:#fff; border:1px solid currentColor; white-space:nowrap; z-index:2; }
+.tile.load .tl { color:var(--sram); } .tile.write .tl { color:var(--title-red); }
+.c { font-family:Monaco,"Courier New",monospace; font-size:14px; min-width:52px; height:28px; display:flex; align-items:center; justify-content:center;
+     border-radius:3px; background:var(--cell); font-variant-numeric:tabular-nums; padding:0 2px; }
 .c.e { background:#fff; border:1px dashed var(--dim); }
-.c.inf { color:var(--mask); font-weight:bold; background:repeating-linear-gradient(135deg, var(--cell) 0 5px, #F2D3D2 5px 10px); }
-.rl { font-family:Arial,Helvetica,sans-serif; font-size:14px; color:var(--gray); display:flex; align-items:center; justify-content:flex-end; padding-right:4px; }
-.slot { border:2px solid transparent; border-radius:6px; padding:2px 6px 4px; }
-.slot.chg { border-color:var(--title-red); background:#FBEFEF; }
-.slot.empty .nm { color:var(--dim); }
-.slot .eq { font-size:13px; color:var(--gray); white-space:nowrap; }
+.rl { font-family:Arial,Helvetica,sans-serif; font-size:13px; color:var(--gray); display:flex; align-items:center; justify-content:flex-end; padding-right:4px; }
+.mem.sram .c { min-width:48px; }
+.mem.sram .items { gap:7px; }
+.c.hot { background:#F6DCDB; color:var(--title-red); font-weight:bold; }
 
-.low { display:grid; grid-template-columns:minmax(0,1fr) 430px; gap:22px; align-items:start; }
-.calc { font-size:17.5px; margin-top:0; min-height:150px; padding:10px 16px; line-height:1.6; }
+.low { display:grid; grid-template-columns:930px minmax(0,1fr); gap:16px; align-items:stretch; }
+.calc { font-size:14.5px; margin:0; padding:10px 14px; line-height:1.6; min-height:0; }
 .calc .r { color:#7FB4E0; }
 .calc .q { color:#F0A04B; }
-.real { border-left:4px solid var(--title-red); padding:2px 0 2px 12px; font-size:15.5px; line-height:1.4; }
-.real h5 { margin:0 0 3px; font-size:16px; font-weight:normal; color:var(--title-red); }
-.real table { border-collapse:collapse; margin:3px 0; }
-.real td { padding:1px 10px 1px 0; }
-.real td.n { text-align:right; font-family:Monaco,"Courier New",monospace; font-size:14px; }
 </style>
 </head>
 <body>
@@ -59,25 +63,18 @@ body { padding:18px 36px; }
   <button id="prev" type="button">◀</button><button id="next" type="button">▶</button>
 </div>
 <p class="cap" id="cap"></p>
+<div class="move" id="move"></div>
 <div class="mem hbm"><h4>HBM <span>GPU DRAM: large, off chip, slow</span></h4><div class="items" id="hbm"></div></div>
-<div class="mem sram"><h4>On-chip SRAM <span>registers + shared memory of one SM: tiny, fast</span></h4><div class="items" id="sram"></div></div>
 <div class="low">
-  <div class="calc" id="calc"></div>
-  <div class="real">
-    <h5>At real size: GPT-2 small, one head</h5>
-    n = 1,024 tokens, d<sub>k</sub> = 64, tiles of 64 rows:
-    <table>
-      <tr><td>Q tile, K tile, V tile [64 × 64] FP16</td><td class="n">3 × 8 KB</td></tr>
-      <tr><td>score tile s, p̃ [64 × 64] FP32</td><td class="n">16 KB</td></tr>
-      <tr><td>o [64 × 64] FP32;  m, ℓ [64]</td><td class="n">16.5 KB</td></tr>
-      <tr><td><b>on chip at any moment</b></td><td class="n"><b>≈ 57 KB</b></td></tr>
-    </table>
-    The full S for one head, [1,024 × 1,024] FP16, is 2 MB: it does not fit in an SM's 128 KB (RTX 4090), so it is never built. Each row's ℓ is complete only after all 16 K/V tiles.
+  <div class="mem sram"><h4>On-chip SRAM <span>registers + shared memory of one SM: tiny, fast</span></h4>
+    <div class="sub">tiles loaded from HBM</div><div class="items" id="sramIn"></div>
+    <div class="sub">values computed on chip</div><div class="items" id="sramWork"></div>
   </div>
+  <div class="calc" id="calc"></div>
 </div>
 <script src="lib.js"></script>
 <script>
-/* ---- the walkthrough's toy model, head 1 (same seed, same weights) ---- */
+/* ---- the walkthrough's toy model; head 2 = columns 4-7 of Q, K, V. No mask. ---- */
 const randn=makeRandn(42);
 const randM=(r,c,s)=>Array.from({length:r},()=>Array.from({length:c},()=>randn()*s));
 const add=(A,B)=>A.map((r,i)=>r.map((v,j)=>v+B[i][j]));
@@ -87,91 +84,99 @@ const layerNorm=X=>X.map(r=>{const s=rowStats(r);return r.map(x=>(x-s.m)/s.sd);}
 function posEnc(n,d){return Array.from({length:n},(_,p)=>Array.from({length:d},(_,i)=>{const k=Math.floor(i/2);const a=p/Math.pow(10000,2*k/d);return i%2===0?Math.sin(a):Math.cos(a);}));}
 const E=randM(10,8,0.9);
 const W={Wq:randM(8,8,0.62),Wk:randM(8,8,0.62),Wv:randM(8,8,0.45)};
-const IDS=[1,2,3,4],TOK=["the","cat","sat","on"];
-const X=add(IDS.map(i=>E[i]),posEnc(4,8)),L1=layerNorm(X);
-const Q=colsOf(matmul(L1,W.Wq),0,4),K=colsOf(matmul(L1,W.Wk),0,4),V=colsOf(matmul(L1,W.Wv),0,4);
-const S=mapM(matmul(Q,T(K)),(v,i,j)=>j>i?-Infinity:v/2);
-const Ostd=matmul(S.map(softmaxRow),V);          // the standard way: full P, then P·V
-
-/* ---- simulate the tiled loop (Q tiles of 2 rows, K/V tiles of 1 row) and record each state ---- */
-const st0={Q:null,K:null,V:null,s:null,p:null,m:null,l:null,o:null,kv:-1,qt:-1};
-const STEPS=[];
-const copy=o=>JSON.parse(JSON.stringify(o,(k,v)=>v===-Infinity?"-inf":v),(k,v)=>v==="-inf"?-Infinity:v);
-let sr=copy(st0);const Oh=[null,null,null,null];
-function push(x){STEPS.push({...x,sr:copy(sr),O:Oh.map(r=>r&&r.slice())});}
-function loadQ(qt){sr={...copy(st0),Q:Q.slice(qt*2,qt*2+2),m:[-Infinity,-Infinity],l:[0,0],o:[[0,0,0,0],[0,0,0,0]],qt};}
-function loadKV(j){sr.K=[K[j]];sr.V=[V[j]];sr.kv=j;sr.s=[0,1].map(r=>[S[sr.qt*2+r][j]]);sr.p=null;}
-function update(){const info=[];
-  for(let r=0;r<2;r++){const s=sr.s[r][0],mo=sr.m[r],mn=Math.max(mo,s),a=mo===-Infinity?0:Math.exp(mo-mn),p=s===-Infinity?0:Math.exp(s-mn);
-    const lo=sr.l[r],oo=sr.o[r].slice();
-    sr.m[r]=mn;sr.l[r]=a*lo+p;sr.o[r]=oo.map((v,c)=>a*v+p*sr.V[0][c]);info.push({s,mo,mn,a,p,lo,ln:sr.l[r],oo,on:sr.o[r].slice()});}
-  sr.p=info.map(x=>[x.p]);return info;}
+const TOK=["the","cat","sat","on"];
+const X=add([1,2,3,4].map(i=>E[i]),posEnc(4,8)),L1=layerNorm(X);
+const Q=colsOf(matmul(L1,W.Wq),4,4),K=colsOf(matmul(L1,W.Wk),4,4),V=colsOf(matmul(L1,W.Wv),4,4);
+const Sfull=mapM(matmul(Q,T(K)),v=>v/2);
+const Ostd=matmul(Sfull.map(softmaxRow),V);
 const f=(v,d=2)=>fmt(v,d), fv=r=>"["+r.map(v=>fmt(v)).join(", ")+"]";
+const KT=[["the","cat"],["sat","on"]];      // keys in K/V tile 0 and tile 1
 
-push({t:"Start: everything is in HBM",hb:{},chg:[],
- cap:"Q₁, K₁ and V₁ are head 1's matrices from the transformer walkthrough, sitting in <b>HBM</b>. We want O₁ = softmax(Q₁K₁ᵀ/√4 + mask)·V₁ <b>without ever writing S or P to HBM</b>. Q is cut into tiles of 2 rows, K and V into tiles of 1 row (tiny, so the toy shows several updates). SRAM is empty.",
- calc:`goal: O₁ [4 × 4], one output row per token<br>usual way: build all of S [4 × 4] and P [4 × 4] in HBM, then P·V<br><span class="h">this way: bring tiles on chip, keep three running numbers per row, write only O</span>`});
-loadQ(0);
-push({t:"Load Q tile 0 into SRAM",hb:{q:{0:"load"}},chg:["Q","m","l","o"],
- cap:"Load <b>Q tile 0</b> (the queries of “the” and “cat”) from HBM into SRAM. It stays on chip until these two rows are finished. For each row, start three running values: <b>m</b> = −∞ (largest score so far), <b>ℓ</b> = 0 (sum of exponentials so far), <b>o</b> = 0 (weighted sum of values so far, <b>not divided</b>).",
- calc:`HBM → SRAM:  Q tile 0  [2 × 4]  (rows “the”, “cat”)<br>m = [−∞, −∞]    ℓ = [0, 0]    o = 0  [2 × 4]<br><span class="h">m, ℓ and o are created on chip; they are never stored in HBM</span>`});
-loadKV(0);
-push({t:"Load K, V tile 0 and score it, on chip",hb:{q:{0:"in"},k:{0:"load"},v:{0:"load"}},chg:["K","V","s"],
- cap:"Load <b>K tile 0 and V tile 0</b> (key and value of “the”). Compute this tile's scores in SRAM: s = Q tile · K tileᵀ / √4. Only a <b>[2 × 1]</b> piece of S exists, and only on chip.",
- calc:`HBM → SRAM:  K tile 0, V tile 0  [1 × 4] each<br>s[the] = q<sub>the</sub>·k<sub>the</sub> / 2 = <b>${f(sr.s[0][0])}</b><br>s[cat] = q<sub>cat</sub>·k<sub>the</sub> / 2 = <b>${f(sr.s[1][0])}</b>`});
-let I=update();
-push({t:"Update m, ℓ, o: no division yet",hb:{q:{0:"in"},k:{0:"in"},v:{0:"in"}},chg:["p","m","l","o"],
- cap:"Exponentiate each score against the largest score seen so far: p̃ = e<sup>s − m</sup>. Add p̃ into ℓ and p̃·v into o. <b>Nothing is divided.</b> ℓ is only the sum over the keys seen so far, so dividing now would give the wrong answer. We simply wait.",
- calc:I.map((x,r)=>`<span class="r">row ${TOK[r]}:</span>  m = max(−∞, ${f(x.s)}) = <b>${f(x.mn)}</b>   p̃ = e<sup>${f(x.s)} − ${f(x.mn)}</sup> = <b>${f(x.p)}</b>   ℓ = <b>${f(x.ln,3)}</b>   o = p̃·v<sub>the</sub> = ${fv(x.on)}`).join("<br>")+`<br><span class="h">ℓ = 1 is not the row's total yet: more keys may follow</span>`});
-loadKV(1);
-push({t:"Load K, V tile 1 (tile 0 is dropped)",hb:{q:{0:"in"},k:{1:"load"},v:{1:"load"}},chg:["K","V","s","p"],
- cap:"Load <b>K tile 1 and V tile 1</b> (key and value of “cat”). They <b>overwrite</b> tile 0 in SRAM: everything tile 0 contributed is already folded into m, ℓ and o. For row “the”, “cat” is a future token, so the causal mask gives −∞.",
- calc:`HBM → SRAM:  K tile 1, V tile 1  (overwrite K, V tile 0)<br>s[the] = <b>−∞</b>   <span class="h">(“cat” comes after “the”: masked)</span><br>s[cat] = q<sub>cat</sub>·k<sub>cat</sub> / 2 = <b>${f(sr.s[1][0])}</b>`});
-I=update();const ic=I[1];
-push({t:"A bigger score arrives: rescale with α",hb:{q:{0:"in"},k:{1:"in"},v:{1:"in"}},chg:["p","m","l","o"],
- cap:`Row “cat” found a <b>larger score</b>: ${f(ic.s)} > ${f(ic.mo)}. Its earlier term was e<sup>s − m</sup> with the old m; against the new m it must be smaller. Multiplying the old ℓ and o by <b>α = e<sup>m_old − m_new</sup></b> makes exactly that correction, without reloading key “the”. Row “the” got −∞, so it does not change.`,
- calc:`<span class="r">row cat:</span>  m: ${f(ic.mo)} → <b>${f(ic.mn)}</b>    α = e<sup>${f(ic.mo)} − ${f(ic.mn)}</sup> = <b>${f(ic.a,3)}</b>    p̃ = e<sup>${f(ic.s)} − ${f(ic.mn)}</sup> = <b>${f(ic.p)}</b><br>ℓ = α·${f(ic.lo,3)} + ${f(ic.p)} = <b>${f(ic.ln,3)}</b><br>o = α·${fv(ic.oo)} + ${f(ic.p)}·v<sub>cat</sub> = <b>${fv(ic.on)}</b><br><span class="q">why α works: e<sup>s − m_old</sup> · e<sup>m_old − m_new</sup> = e<sup>s − m_new</sup></span>`});
-const done0=sr.o.map((r,i)=>r.map(v=>v/sr.l[i]));Oh[0]=done0[0];Oh[1]=done0[1];
-push({t:"Rows finished: ℓ is now the full sum, divide once",hb:{q:{0:"in"},k:{2:"skip",3:"skip"},v:{2:"skip",3:"skip"},o:{0:"write"}},chg:["o"],
- cap:"K, V tiles 2 and 3 (“sat”, “on”) are future tokens for both rows: <b>skipped, never loaded</b>. Every key these rows may see has now been seen, so <b>ℓ is now the complete row sum</b>. Only now divide: O = o / ℓ. Write the finished rows to HBM: the first time anything leaves the chip.",
- calc:[0,1].map(r=>`<span class="r">row ${TOK[r]}:</span>  O = o / ℓ = ${fv(sr.o[r])} / ${f(sr.l[r],3)} = <b>${fv(done0[r])}</b>`).join("<br>")+`<br><span class="q">standard P·V gives:  the ${fv(Ostd[0])}   cat ${fv(Ostd[1])}: identical</span>`});
-loadQ(1);const log=[[],[]];
-for(let j=0;j<4;j++){loadKV(j);update().forEach((x,r)=>log[r].push(x));}
-const done1=sr.o.map((r,i)=>r.map(v=>v/sr.l[i]));Oh[2]=done1[0];Oh[3]=done1[1];
-push({t:"Q tile 1: the same loop over 4 K, V tiles",hb:{q:{1:"load"},k:{0:"load",1:"load",2:"load",3:"load"},v:{0:"load",1:"load",2:"load",3:"load"},o:{1:"write"}},chg:["Q","K","V","s","p","m","l","o"],
- cap:"<b>Q tile 1</b> (“sat”, “on”) runs the same loop: load K, V tiles 0, 1, 2, 3 one after another, update m, ℓ, o after each, divide once at the end, write. Here each row's largest score comes first, so every α is 1. O₁ is complete, and S and P were never in HBM.",
- calc:[0,1].map(r=>`<span class="r">row ${TOK[r+2]}:</span> `+log[r].map((x,j)=>`tile ${j}: m=${f(x.mn)} ℓ=${f(x.ln)}`).join("  ")+`  → O = <b>${fv(done1[r])}</b>`).join("<br>")+
-   `<br><span class="q">standard P·V:  sat ${fv(Ostd[2])}   on ${fv(Ostd[3])}: identical</span><br><span class="h">HBM traffic: Q, K, V tiles read; only O written. On a GPU, Q tiles 0 and 1 run at the same time on different SMs.</span>`});
-push({t:"Why dividing only at the end is exact",hb:{},chg:[],
- cap:"Softmax divides every term of a row by the <b>same</b> number ℓ. A common factor can be pulled out of a sum, so “divide each term, then add” equals “add, then divide once”. That is why the division can wait until ℓ is complete, and why α can repair terms computed with an old maximum.",
- calc:`standard:  O<sub>cat</sub> = p<sub>the</sub>·v<sub>the</sub> + p<sub>cat</sub>·v<sub>cat</sub>,   with p<sub>j</sub> = e<sup>s_j − m</sup> / ℓ<br>               = ( e<sup>s_the − m</sup>·v<sub>the</sub> + e<sup>s_cat − m</sup>·v<sub>cat</sub> ) / ℓ      <span class="h">← the same ℓ in both terms</span><br>               = o / ℓ<br>numbers:   e<sup>${f(ic.mo)} − ${f(ic.mn)}</sup> = ${f(ic.a,3)},  e<sup>0</sup> = 1,  ℓ = ${f(ic.ln,3)}  →  p = [${f(ic.a/ic.ln,3)}, ${f(1/ic.ln,3)}]  <span class="h">= softmax of row “cat”</span>`});
+/* ---- build every step ---- */
+const empty={Q:null,K:null,V:null,kt:-1,S:null,m:null,a:null,P:null,l:null,o:null};
+const copy=o=>JSON.parse(JSON.stringify(o,(k,v)=>v===-Infinity?"-inf":v),(k,v)=>v==="-inf"?-Infinity:v);
+let sr=copy(empty),Ohbm=null,reads=0,writes=0;
+const STEPS=[];
+function push(x){STEPS.push({...x,sr:copy(sr),O:Ohbm&&Ohbm.map(r=>r.slice()),reads,writes,hot:x.hot||{}});}
+
+push({t:"Start: Q, K, V are in HBM",mv:["none","Nothing has moved yet"],hb:{},rd:[],wr:[],
+ cap:"Q, K and V of <b>head 2</b> from the transformer walkthrough (columns 4–7), 4 tokens × d<sub>k</sub> = 4. No mask. Goal: O = softmax(Q·Kᵀ/√4)·V, without ever writing S or P to HBM. All of Q fits as one tile; K and V are split into <b>2 tiles of 2 rows</b>.",
+ calc:`goal: O [4 × 4] = softmax(Q·Kᵀ / 2)·V<br><br><span class="h">usual way: write S [4 × 4] to HBM, read it, write P [4 × 4], read it, then P·V</span><br><br>this way: Q stays on chip; K, V arrive one tile at a time;<br>each row keeps three running values: <b>m</b>, <b>ℓ</b>, <b>o</b>`});
+
+sr.Q=Q.map(r=>r.slice());sr.m=[-Infinity,-Infinity,-Infinity,-Infinity];sr.l=[0,0,0,0];sr.o=Q.map(()=>[0,0,0,0]);reads+=16;
+push({t:"Load Q into SRAM; start m, ℓ, o",mv:["load","HBM → SRAM: Q [4 × 4] = 16 numbers.  SRAM only: create m, ℓ, o"],hb:{Q:"load"},rd:[],wr:["Q","m","l","o"],
+ cap:"Read Q from HBM into SRAM; it stays there to the end. Create the three running values for every row, directly in SRAM: <b>m</b> = −∞ (largest score so far), <b>ℓ</b> = 0 (sum of exponentials so far), <b>o</b> = 0 (weighted sum of values so far, <b>never divided until the end</b>).",
+ calc:`HBM → SRAM:  Q  [4 × 4]<br><br>in SRAM:  m = [−∞, −∞, −∞, −∞]<br>          ℓ = [0, 0, 0, 0]<br>          o = 0  [4 × 4]<br><br><span class="h">m, ℓ, o are never written to HBM</span>`});
+
+for(let j=0;j<2;j++){
+  const keys=KT[j],kr=[2*j,2*j+1];
+  sr.K=kr.map(i=>K[i].slice());sr.V=kr.map(i=>V[i].slice());sr.kt=j;reads+=16;
+  const dropped=j?" They <b>overwrite</b> K, V tile 0, and S, P̃ of tile 0 are thrown away: everything tile 0 contributed is already inside m, ℓ and o.":"";
+  push({t:`Tile ${j}: load K${j}, V${j}`,mv:["load",`HBM → SRAM: K tile ${j} [2 × 4] + V tile ${j} [2 × 4] = 16 numbers`],hb:{Q:"in",K:{[j]:"load"},V:{[j]:"load"}},rd:[],wr:["K","V"],
+   cap:`Read <b>K tile ${j} and V tile ${j}</b> (keys and values of “${keys[0]}” and “${keys[1]}”) from HBM into SRAM.`+dropped,
+   calc:`HBM → SRAM:  K tile ${j} = keys of “${keys[0]}”, “${keys[1]}”  [2 × 4]<br>             V tile ${j} = values of “${keys[0]}”, “${keys[1]}”  [2 × 4]<br><br><span class="h">this is the only time these 16 numbers are read for this Q tile</span>`});
+  sr.S=sr.Q.map(q=>sr.K.map(k=>q.reduce((s,x,c)=>s+x*k[c],0)/2));sr.P=null;sr.a=null;
+  push({t:`Tile ${j}: scores S${j} = Q·K${j}ᵀ / √4`,mv:["comp",`SRAM only: read Q, K tile ${j} → write S${j} [4 × 2]`],hb:{Q:"in",K:{[j]:"in"},V:{[j]:"in"}},rd:["Q","K"],wr:["S"],
+   cap:`Multiply Q [4 × 4] by K tile ${j}ᵀ [4 × 2] on chip: a <b>[4 × 2]</b> block of scores, one column per key in this tile. Only these 8 scores exist at this moment, and only in SRAM.`,
+   calc:`S${j} = Q · K${j}ᵀ / 2     [4 × 4]·[4 × 2] → [4 × 2]<br><br>example: S${j}[the, ${keys[0]}] = q<sub>the</sub>·k<sub>${keys[0]}</sub> / 2<br>  = (${Q[0].map((x,c)=>`${f(x)}×${f(K[2*j][c])}`).join(" + ")}) / 2<br>  = <b>${f(sr.S[0][0])}</b><br><br><span class="h">8 dot products like this one</span>`});
+  const mo=sr.m.slice(),bm=sr.S.map(r=>Math.max(...r)),mn=mo.map((m,i)=>Math.max(m,bm[i])),al=mo.map((m,i)=>m===-Infinity?0:Math.exp(m-mn[i]));
+  sr.m=mn;sr.a=al;
+  const hotA={};al.forEach((a,i)=>{if(j>0&&a<1)hotA[i]=1;});
+  push({t:`Tile ${j}: new row max m and correction α`,mv:["comp",`SRAM only: read S${j}, old m → write new m, α`],hb:{Q:"in",K:{[j]:"in"},V:{[j]:"in"}},rd:["S","m"],wr:["m","a"],hot:{a:hotA},
+   cap:j===0?"For each row: the largest score so far is the max of this tile's scores (there was nothing before). α = e<sup>m_old − m_new</sup> is the factor that will correct earlier sums; here there are none, so α = 0.":
+     `For each row, compare this tile's largest score with the old m. Row “the” finds a <b>bigger score</b> (${f(bm[0])} > ${f(mo[0])}), so its m goes up and <b>α = ${f(al[0],3)} &lt; 1</b>: its earlier sums were made with a max that was too small and must be scaled down. Other rows: m unchanged, α = 1.`,
+   calc:`m_new = max(m_old, row max of S${j})     α = e<sup>m_old − m_new</sup><br><br>`+TOK.map((t,i)=>`<span class="r">${t.padEnd(3," ")}:</span> max(${f(mo[i])}, ${f(sr.S[i][0])}, ${f(sr.S[i][1])}) = <b>${f(mn[i])}</b>   α = ${mo[i]===-Infinity?"e<sup>−∞</sup> = <b>0</b>":`e<sup>${f(mo[i])} − ${f(mn[i])}</sup> = <b>${f(al[i],3)}</b>`}`).join("<br>")});
+  sr.P=sr.S.map((r,i)=>r.map(s=>Math.exp(s-sr.m[i])));
+  push({t:`Tile ${j}: P̃${j} = e^(S${j} − m)`,mv:["comp",`SRAM only: read S${j}, m → write P̃${j} [4 × 2]`],hb:{Q:"in",K:{[j]:"in"},V:{[j]:"in"}},rd:["S","m"],wr:["P"],
+   cap:`Exponentiate every score against its row's current max. P̃ is <b>not</b> a probability: it is not divided by anything, because the row sum is not known yet (half the keys are still in HBM).`,
+   calc:`P̃${j} = e<sup>S${j} − m</sup>     [4 × 2]<br><br>`+TOK.map((t,i)=>`<span class="r">${t.padEnd(3," ")}:</span> [e<sup>${f(sr.S[i][0])} − ${f(sr.m[i])}</sup>, e<sup>${f(sr.S[i][1])} − ${f(sr.m[i])}</sup>] = <b>${fv(sr.P[i])}</b>`).join("<br>")});
+  const lo=sr.l.slice();sr.l=lo.map((l,i)=>al[i]*l+sr.P[i][0]+sr.P[i][1]);
+  push({t:`Tile ${j}: running sum ℓ`,mv:["comp",`SRAM only: read α, old ℓ, P̃${j} → write new ℓ`],hb:{Q:"in",K:{[j]:"in"},V:{[j]:"in"}},rd:["a","l","P"],wr:["l"],hot:{a:hotA},
+   cap:j===0?"Add this tile's exponentials into ℓ. ℓ is the sum over the keys seen <b>so far</b> (2 of 4). It is <b>not</b> the row total yet, so we cannot divide by it yet.":
+     "Scale the old ℓ by α (it was summed against the old max), then add this tile's exponentials. All 4 keys have now been seen, so <b>ℓ is now the complete row sum</b>.",
+   calc:`ℓ = α · ℓ_old + row sum of P̃${j}<br><br>`+TOK.map((t,i)=>`<span class="r">${t.padEnd(3," ")}:</span> ${f(al[i],3)} · ${f(lo[i],3)} + (${f(sr.P[i][0])} + ${f(sr.P[i][1])}) = <b>${f(sr.l[i],3)}</b>`).join("<br>")});
+  const oo=sr.o.map(r=>r.slice());sr.o=oo.map((r,i)=>r.map((v,c)=>al[i]*v+sr.P[i][0]*sr.V[0][c]+sr.P[i][1]*sr.V[1][c]));
+  push({t:`Tile ${j}: running output o = α·o + P̃${j}·V${j}`,mv:["comp",`SRAM only: read α, old o, P̃${j}, V tile ${j} → write new o [4 × 4]`],hb:{Q:"in",K:{[j]:"in"},V:{[j]:"in"}},rd:["a","o","P","V"],wr:["o"],hot:{a:hotA},
+   cap:`Scale the old o by α, then add P̃${j}·V${j}: each row adds its weighted values of “${keys[0]}” and “${keys[1]}”. Again <b>nothing is divided</b>.`+(j===0?" Tile 0 is finished; nothing was written to HBM.":""),
+   calc:`o = α · o_old + P̃${j} · V${j}      [4 × 2]·[2 × 4] → [4 × 4]<br><br>`+TOK.map((t,i)=>`<span class="r">${t.padEnd(3," ")}:</span> ${f(al[i],2)}·o + ${f(sr.P[i][0])}·v<sub>${keys[0]}</sub> + ${f(sr.P[i][1])}·v<sub>${keys[1]}</sub> = <b>${fv(sr.o[i])}</b>`).join("<br>")});
+}
+const Ofin=sr.o.map((r,i)=>r.map(v=>v/sr.l[i]));Ohbm=Ofin;writes+=16;
+push({t:"All tiles done: divide once, write O to HBM",mv:["store","SRAM only: O = o / ℓ.   SRAM → HBM: O [4 × 4] = 16 numbers (the only write)"],hb:{O:"write"},rd:["o","l"],wr:[],
+ cap:"Every key has been seen, so ℓ is each row's <b>full</b> sum of exponentials. Now, and only now, divide: O = o / ℓ. Write O to HBM. This is the only thing ever written back; S and P̃ never left the chip.",
+ calc:`O = o / ℓ   (each row divided by its own ℓ)<br><br>`+TOK.map((t,i)=>`<span class="r">${t.padEnd(3," ")}:</span> ${fv(sr.o[i])} / ${f(sr.l[i],3)} = <b>${fv(Ofin[i])}</b>`).join("<br>")+
+   `<br><br><span class="q">standard softmax(S)·V, row “the”: ${fv(Ostd[0])}  (all 4 rows match)</span>`});
+const S0=Sfull[0],m0=Math.max(...S0),e0=S0.map(s=>Math.exp(s-m0)),l0=e0.reduce((a,b)=>a+b,0);
+push({t:"Why “divide at the end” gives the same answer",mv:["none","No data movement: the arithmetic behind the trick"],hb:{O:"in"},rd:[],wr:[],
+ cap:"Softmax divides every term of a row by the <b>same</b> ℓ. A number that is the same in every term can be pulled out of the sum: “divide each term, then add” equals “add, then divide once”. So the division can wait until ℓ is complete.",
+ calc:`row “the”, done the standard way (whole row at once):<br>  scores  ${fv(S0)}    max = ${f(m0)}<br>  e<sup>s − max</sup> = ${fv(e0)}    ℓ = ${f(l0,3)}<br>  p = e<sup>s − max</sup> / ℓ = ${fv(e0.map(x=>x/l0))}<br>  O = Σ p<sub>j</sub>·v<sub>j</sub> = ${fv(Ostd[0])}<br><br>Σ (e<sup>s_j − m</sup> / ℓ)·v<sub>j</sub>  =  (1/ℓ)·Σ e<sup>s_j − m</sup>·v<sub>j</sub>  =  o / ℓ<br><span class="q">and α fixes an old max:  e<sup>s − m_old</sup> · e<sup>m_old − m_new</sup> = e<sup>s − m_new</sup></span>`});
 
 /* ---- rendering ---- */
-function cells(M,{rl,empty}={}){
-  let h="";M.forEach((r,i)=>{h+=`<div class="rl">${rl?rl[i]:""}</div>`;r.forEach(v=>{h+=empty?`<div class="c e"></div>`:`<div class="c${v===-Infinity?" inf":""}">${fmt(v)}</div>`;});});
-  return h;}
-function tiled(name,kind,M,rows,states,labelFn,filled){
-  const n=M.length/rows;let h=`<div class="item k-${kind}"><div class="nm">${name}<i>[${M.length} × ${M[0].length}] · ${n} tiles</i></div><div class="tiles">`;
-  for(let t=0;t<n;t++){const s=(states||{})[t]||"",lab={load:"→ SRAM",write:"← written",skip:"skipped",in:"on chip"}[s]||"";
-    h+=`<div class="tile ${s}" style="grid-template-columns:auto repeat(${M[0].length},auto)">${cells(M.slice(t*rows,t*rows+rows),{rl:labelFn(t),empty:filled&&!filled[t]})}${lab?`<span class="tl">${lab}</span>`:""}</div>`;}
+function cells(M,rl,hot){let h="";M.forEach((r,i)=>{h+=`<div class="rl">${rl?rl[i]:""}</div>`;r.forEach(v=>{h+=`<div class="c${hot&&hot[i]?" hot":""}">${fmt(v)}</div>`;});});return h;}
+const grid=(M,rl,hot)=>`<div class="tile" style="grid-template-columns:auto repeat(${M[0].length},auto)">${cells(M,rl,hot)}</div>`;
+function hbmMat(name,kind,M,tileRows,state,rl){
+  const n=M.length/tileRows,lab={load:"→ SRAM",write:"← written",in:"on chip"};
+  let h=`<div class="item k-${kind}"><div class="nm">${name}<i>[4 × 4]${n>1?` · ${n} tiles`:""}</i></div><div class="tiles">`;
+  for(let t=0;t<n;t++){const s=typeof state==="object"?(state||{})[t]||"":state||"";
+    const sub=M.slice(t*tileRows,t*tileRows+tileRows),r=rl.slice(t*tileRows,t*tileRows+tileRows);
+    h+=`<div class="tile ${s}" style="grid-template-columns:auto repeat(4,auto)">${M.empty?r.map(x=>`<div class="rl">${x}</div>`+'<div class="c e"></div>'.repeat(4)).join(""):cells(sub,r)}${lab[s]?`<span class="tl">${lab[s]}</span>`:""}</div>`;}
   return h+`</div></div>`;}
-function slot(key,name,kind,M,rl,eq,chg){
-  const empty=!M;return `<div class="slot item k-${kind}${chg.includes(key)?" chg":""}${empty?" empty":""}"><div class="nm">${name}</div>`+
-    (empty?`<div class="c e" style="margin-top:3px">–</div>`:`<div class="tile" style="grid-template-columns:auto repeat(${M[0].length},auto)">${cells(M,{rl})}</div>`)+
-    (eq?`<div class="eq">${eq}</div>`:"")+`</div>`;}
+function slot(key,name,kind,M,rl,eq,st,hot){
+  const cls=st.wr.includes(key)?" wr":st.rd.includes(key)?" rd":"";
+  return `<div class="item k-${kind}${cls}${M?"":" off"}"><div class="nm">${name}</div>${M?grid(M,rl,hot):`<div class="c e" style="margin-top:2px">–</div>`}<div class="eq">${eq}</div></div>`;}
 let cur=0;
 function render(){
-  const st=STEPS[cur],s=st.sr,hb=st.hb;
+  const st=STEPS[cur],s=st.sr;
   $("#num").textContent=`${cur+1} / ${STEPS.length}`;$("#title").textContent=st.t;$("#cap").innerHTML=st.cap;
-  const qrow=t=>TOK.slice(t*2,t*2+2),krow=t=>[TOK[t]];
-  $("#hbm").innerHTML=tiled("Q₁","q",Q,2,hb.q,qrow)+tiled("K₁","k",K,1,hb.k,krow)+tiled("V₁","v",V,1,hb.v,krow)+
-    `<div style="width:30px"></div>`+tiled("O₁ (output)","x",st.O.map(r=>r||[0,0,0,0]),2,hb.o,qrow,[!!st.O[0],!!st.O[2]])+
-    `<div class="item" style="font-size:16px;color:var(--gray);max-width:220px;align-self:center">S [4 × 4] and P [4 × 4]:<br><b style="color:var(--sram)">never stored here</b></div>`;
-  const rl=s.qt<0?null:TOK.slice(s.qt*2,s.qt*2+2),kl=s.kv<0?null:[TOK[s.kv]];
-  $("#sram").innerHTML=slot("Q","Q tile","q",s.Q,rl,"",st.chg)+slot("K","K tile","k",s.K,kl,"",st.chg)+slot("V","V tile","v",s.V,kl,"",st.chg)+
-    slot("s","s = q·kᵀ/√d","x",s.s,rl,"this tile's scores",st.chg)+slot("p","p̃ = e<sup>s−m</sup>","p",s.p,rl,"not divided",st.chg)+
-    slot("m","m","x",s.m&&s.m.map(v=>[v]),rl,"max so far",st.chg)+slot("l","ℓ","x",s.l&&s.l.map(v=>[v]),rl,"Σ p̃ so far",st.chg)+
-    slot("o","o","x",s.o,rl,"Σ p̃·v so far, not divided",st.chg);
+  const tagTxt={load:"HBM → SRAM",comp:"compute in SRAM",store:"SRAM → HBM",none:"no movement"}[st.mv[0]];
+  $("#move").innerHTML=`<span class="tag ${st.mv[0]}">${tagTxt}</span><span>${st.mv[1]}</span><span class="cnt">HBM read so far: <b>${st.reads}</b> numbers · written: <b>${st.writes}</b> · S, P̃ written: <b>0</b></span>`;
+  const Oe=st.O||Object.assign([[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]],{empty:true});
+  $("#hbm").innerHTML=hbmMat("Q","q",Q,4,st.hb.Q,TOK)+hbmMat("K","k",K,2,st.hb.K,TOK)+hbmMat("V","v",V,2,st.hb.V,TOK)+hbmMat("O (output)","x",Oe,4,st.hb.O,TOK)+
+    `<div class="item" style="font-size:15px;color:var(--gray);align-self:center;max-width:170px">S and P (each [4 × 4]): <b style="color:var(--sram)">never stored in HBM</b></div>`;
+  const kl=s.kt<0?null:KT[s.kt];
+  $("#sramIn").innerHTML=slot("Q","Q","q",s.Q,TOK,"stays for the whole loop",st)+slot("K",`K tile${s.kt<0?"":" "+s.kt}`,"k",s.K,kl,"replaced by the next tile",st)+slot("V",`V tile${s.kt<0?"":" "+s.kt}`,"v",s.V,kl,"replaced by the next tile",st);
+  const col=a=>a&&a.map(v=>[v]);
+  $("#sramWork").innerHTML=slot("S",`S${s.kt<0?"":s.kt}`,"x",s.S,TOK,"scores, this tile",st)+slot("m","m","x",col(s.m),TOK,"max so far",st)+slot("a","α","x",col(s.a),TOK,"e^(m_old − m_new)",st,st.hot.a)+
+    slot("P",`P̃${s.kt<0?"":s.kt}`,"p",s.P,TOK,"e^(S − m), not divided",st)+slot("l","ℓ","x",col(s.l),TOK,"Σ e^(s − m) so far",st)+slot("o","o","x",s.o,TOK,"Σ P̃·V so far, not divided",st);
   $("#calc").innerHTML=st.calc;
   $("#prev").disabled=cur===0;$("#next").disabled=cur===STEPS.length-1;
 }

@@ -14,7 +14,7 @@ once an animation reaches its last step. Every diagram is an interactive page in
 | page | what it shows |
 |---|---|
 | `anim/transformer.html` | a full forward pass of a toy transformer in 22 steps, from the embedding table to the KV cache, with the equations and GPT-2-small shapes for each step |
-| `anim/online-softmax.html` | the walkthrough's Q₁, K₁, V₁ tiled between HBM and on-chip SRAM: running max, sum and undivided output per row, the α rescale, and the single division at the end |
+| `anim/online-softmax.html` | 16 steps, no mask: the walkthrough's head-2 Q, K, V tiled between HBM and on-chip SRAM; every load, every on-chip computation (S, m, α, P̃, ℓ, o) and the single write of O |
 | `anim/flash-tiling.html` | the FlashAttention-2 tiled loop, causal tile skipping, on-chip contents |
 | `anim/results.html` | measured time, memory and TFLOP/s on an RTX 4090 |
 
